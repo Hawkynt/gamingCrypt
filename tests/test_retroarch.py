@@ -157,6 +157,10 @@ def test_play_and_quick_menu_states(qtbot, emu, monkeypatch, tmp_path):
     assert not menu.state_row.isVisibleTo(menu)  # Steam game / nothing running: no states
 
 
+def test_esc_quits_at_the_first_press(emu):
+    assert 'quit_press_twice = "false"' in retroarch.write_config(emu).read_text()
+
+
 def test_config_gives_player_one_the_virtual_controller(emu):
     """The physical pad is grabbed by the remapper - RetroArch must read the virtual one, with a profile."""
     from gamingcrypt.input import evdev
