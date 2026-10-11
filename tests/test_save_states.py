@@ -353,3 +353,93 @@ def test_the_slots_close_when_the_game_ends(qtbot, window, emu, game, monkeypatc
     assert window.menu_page is not None
     window.game_over(game.appid)
     assert window.menu_page is None
+
+
+# --- play time ----------------------------------------------------------------------------------
+
+def test_played_text():
+    from gamingcrypt.ui.save_states import played_text
+
+    assert played_text(None) == "" and played_text(20) == "Less than a minute played"
+    assert played_text(45 * 60 + 59) == "45 min played" and played_text(2 * 3600 + 5 * 60) == "2 h 05 min played"
+
+
+def test_play_time_is_kept_with_its_state(emu, game):
+    fake = FakeRetroArch(emu)
+    assert savestates.capture(emu, game, 3, fake, sleep=lambda s: None, played=754)
+    assert (emu.states / "Super Mario World.state3.time").read_text() == "754\n"
+    write(emu, "Super Mario World.state5", "old 5", age=50)  # from before play time was counted
+    slots = savestates.slots(emu, game)
+    assert slots[3].played == 754 and slots[5].played is None
+    assert savestates.capture(emu, game, 5, fake, sleep=lambda s: None, played=10)  # RetroArch saved into its slot 0
+    slots = savestates.slots(emu, game)
+    assert (slots[3].played, slots[5].played, slots[0].empty) == (754, 10, True)
+    assert savestates.capture(emu, game, 3, fake, sleep=lambda s: None)  # saved over, time unknown: not the old one
+    assert savestates.slots(emu, game)[3].played is None
+    from gamingcrypt.emulation import removal
+
+    assert "Super Mario World.state5.time" in {f.name for f in removal.save_files(emu, game)}
+
+
+def test_play_time_moves_with_a_state_that_is_tidied_up(emu, game):
+    write(emu, "Super Mario World.state30", "s30", folder="Snes9x")
+    (emu.states / "Snes9x" / "Super Mario World.state30.time").write_text("3600\n")
+    slots = savestates.slots(emu, game)
+    assert slots[0].path.read_text() == "s30" and slots[0].played == 3600
+
+
+def test_play_time_is_shown_below_the_date(qtbot, host, emu, game):
+    from gamingcrypt.ui.save_states import SaveStatesPage
+
+    write(emu, "Super Mario World.state")
+    picture(emu.states / "Super Mario World.state.png")
+    (emu.states / "Super Mario World.state.time").write_text("7500\n")
+    write(emu, "Super Mario World.state1")
+    page = SaveStatesPage(savestates.slots(emu, game), "load", parent=host)
+    page.show()
+    host.grab()
+    counted, before, empty = page.tiles[0], page.tiles[1], page.tiles[2]
+    assert counted.played.text() == "2 h 05 min played" and before.played.text() == "" and empty.played.text() == ""
+    assert counted.played.geometry().top() >= counted.when.geometry().bottom()
+    assert counted.when.geometry().top() >= counted.picture.geometry().bottom()
+    assert counted.rect().contains(counted.played.geometry())
+
+
+def test_play_time_counts_from_the_start_and_from_a_loaded_state(qtbot, window, emu, game, monkeypatch):
+    """Started without a state: from the start. A state loaded: its time, and on from there."""
+    import time as time_module
+
+    clock = {"now": 1000.0}
+    monkeypatch.setattr(time_module, "monotonic", lambda: clock["now"])
+    fake = FakeRetroArch(emu)
+    monkeypatch.setattr(retroarch, "send", fake)
+    menu = playing(window, game)
+    clock["now"] += 600  # ten minutes in
+    monkeypatch.setattr(savestates, "capture", lambda paths, rom, slot, send, **k: fake.sent.append(
+        ("saved", slot, k.get("played"))) or True)
+    menu.save_state_button.click()
+    window.menu_page.tiles[0].tapped.emit()
+    qtbot.waitUntil(lambda: ("saved", 0, 600) in fake.sent)
+    clock["now"] += 300  # saved again later: the time went on
+    window.toggle_quick_menu()
+    menu.save_state_button.click()
+    window.menu_page.tiles[1].tapped.emit()
+    qtbot.waitUntil(lambda: ("saved", 1, 900) in fake.sent)
+    write(emu, "Super Mario World.state4")
+    (emu.states / "Super Mario World.state4.time").write_text("7200\n")  # two hours in
+    window.toggle_quick_menu()
+    menu.load_state_button.click()
+    window.menu_page.tiles[4].tapped.emit()
+    clock["now"] += 60
+    assert window.state_played() == 7260
+    write(emu, "Super Mario World.state7")  # a state without a time: counted from loading it
+    window.toggle_quick_menu()
+    menu.load_state_button.click()
+    window.menu_page.tiles[7].tapped.emit()
+    clock["now"] += 30
+    assert window.state_played() == 30
+    window.game_over(game.appid)
+    window.game_watcher._stop()
+    window.launch_rom(game)  # the next start: from zero again
+    clock["now"] += 5
+    assert window.state_played() == 5

@@ -1,7 +1,7 @@
 """Save states of RetroArch games: nine slots, each with a picture of the moment it was saved.
 
 RetroArch names a state after the game ("Game.state", "Game.state1" …) and writes its picture
-next to it ("Game.state1.png"). It can load any slot (LOAD_STATE_SLOT), but saves only into
+next to it ("Game.state1.png"); GamingCrypt adds how long was played up to it ("Game.state1.time"). It can load any slot (LOAD_STATE_SLOT), but saves only into
 "the current one" - which GamingCrypt doesn't know. So a save goes: put the kept states aside,
 let RetroArch save, and move what it wrote into the slot that was picked.
 """
@@ -22,6 +22,7 @@ SLOTS = 9
 SPARE = 99  # not one of the nine: the state a game comes back with after its speed was changed
 SPARE_KEPT_S = 120
 ASIDE = ".keep"  # a kept state while RetroArch saves
+WITH_IT = (".png", ".time")  # what belongs to a state: its picture, its play time
 
 
 @dataclass
@@ -30,6 +31,7 @@ class State:
     path: Path | None = None
     picture: Path | None = None  # None: saved before there were pictures
     saved_at: float = 0.0
+    played: int | None = None  # seconds played up to it; None: saved before that was counted
 
     @property
     def empty(self) -> bool:
@@ -42,6 +44,17 @@ def state_file(paths: EmulationPaths, game: RomGame, slot: int) -> Path:
 
 def picture_of(state: Path) -> Path:
     return state.with_name(state.name + ".png")
+
+
+def played_file(state: Path) -> Path:
+    return state.with_name(state.name + ".time")
+
+
+def read_played(state: Path) -> int | None:
+    try:
+        return max(0, int(played_file(state).read_text().strip()))
+    except (OSError, ValueError):
+        return None
 
 
 def load_command(slot: int) -> str:
@@ -73,17 +86,22 @@ def _written(paths: EmulationPaths, game: RomGame) -> list[tuple[Path, int]]:
     return sorted((f, int(m.group(1) or 0)) for f in files if (m := name.match(f.name)))
 
 
+def _with(state: Path) -> list[Path]:
+    return [state.with_name(state.name + suffix) for suffix in WITH_IT]
+
+
 def _move(state: Path, target: Path) -> None:
-    """The state and its picture - a picture of what was there before must not stay."""
+    """The state with its picture and play time - those of what was there before must not stay."""
     os.replace(state, target)
-    if picture_of(state).is_file():
-        os.replace(picture_of(state), picture_of(target))
-    else:
-        picture_of(target).unlink(missing_ok=True)
+    for extra, target_extra in zip(_with(state), _with(target)):
+        if extra.is_file():
+            os.replace(extra, target_extra)
+        else:
+            target_extra.unlink(missing_ok=True)
 
 
 def _delete(state: Path) -> None:
-    for f in (state, picture_of(state)):
+    for f in (state, *_with(state)):
         try:
             f.unlink(missing_ok=True)
         except OSError:
@@ -92,7 +110,7 @@ def _delete(state: Path) -> None:
 
 def _put_aside(paths: EmulationPaths, game: RomGame) -> None:
     for state, _slot in _written(paths, game):
-        for f in (state, picture_of(state)):
+        for f in (state, *_with(state)):
             if f.is_file():
                 os.replace(f, f.with_name(f.name + ASIDE))
 
@@ -107,11 +125,11 @@ def _put_back(paths: EmulationPaths, game: RomGame) -> None:
     back: set[Path] = set()
     for f in sorted(aside):  # "Game.state1.keep" before "Game.state1.png.keep"
         target = f.with_name(f.name[: -len(ASIDE)])
-        picture = target.name.endswith(".png")
-        state = target.with_name(target.name[: -len(".png")]) if picture else target
+        suffix = next((s for s in WITH_IT if target.name.endswith(s)), "")
+        state = target.with_name(target.name[: -len(suffix)]) if suffix else target
         try:
-            if target.exists() or (picture and state.exists() and state not in back):
-                f.unlink()  # replaced by a new save (a picture: with its state)
+            if target.exists() or (suffix and state.exists() and state not in back):
+                f.unlink()  # replaced by a new save (its picture and play time: with the state)
             else:
                 os.replace(f, target)
                 back.add(target)
@@ -153,7 +171,8 @@ def slots(paths: EmulationPaths, game: RomGame) -> list[State]:
         state = state_file(paths, game, slot)
         if state.is_file():
             picture = picture_of(state)
-            found.append(State(slot, state, picture if picture.is_file() else None, _age(state)))
+            found.append(State(slot, state, picture if picture.is_file() else None, _age(state),
+                               read_played(state)))
         else:
             found.append(State(slot))
     return found
@@ -186,9 +205,10 @@ def _wait_for_state(paths: EmulationPaths, game: RomGame, timeout: float, sleep,
 
 
 def capture(paths: EmulationPaths, game: RomGame, slot: int, send: Callable[[str], bool], timeout: float = 15.0,
-            sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic) -> bool:
+            sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic,
+            played: int | None = None) -> bool:
     """Save the running game into the slot. False: RetroArch wrote nothing (a core without save
-    states) - what was in the slot is still there then."""
+    states) - what was in the slot is still there then. played: seconds played up to now."""
     tidy(paths, game)
     _delete(state_file(paths, game, SPARE))
     _put_aside(paths, game)
@@ -201,6 +221,8 @@ def capture(paths: EmulationPaths, game: RomGame, slot: int, send: Callable[[str
         target = state_file(paths, game, slot)
         if state != target:
             _move(state, target)
+        if played is not None:
+            played_file(target).write_text(f"{int(played)}\n")
         return True
     except OSError:
         return False

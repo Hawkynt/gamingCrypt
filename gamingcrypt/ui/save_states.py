@@ -16,11 +16,22 @@ from gamingcrypt.ui.widgets import big_button
 
 COLUMNS = 3
 CAPTION_H = 30
+PLAYED_H = 24
 
 
 def saved_text(saved_at: float) -> str:
     """Date and time it was saved: "12 Oct 2026 · 18:45"."""
     return f"{datetime.fromtimestamp(saved_at):%d %b %Y · %H:%M}"
+
+
+def played_text(seconds: int | None) -> str:
+    """"45 min played", "2 h 05 min played" - nothing for a state from before it was counted."""
+    if seconds is None:
+        return ""
+    minutes = seconds // 60
+    if minutes < 1:
+        return "Less than a minute played"
+    return f"{minutes} min played" if minutes < 60 else f"{minutes // 60} h {minutes % 60:02d} min played"
 
 
 def placeholder(w: int, h: int, text: str, symbol: str = "") -> QPixmap:
@@ -53,7 +64,8 @@ class StateTile(Tappable):
         layout = QVBoxLayout(self)
         card_margins(layout)
         layout.setSpacing(4)
-        inner_w, inner_h = w - 20, h - 26 - CAPTION_H  # the card's edge and padding, the gap to the caption
+        # the card's edge and padding, the gaps to the two lines below the picture
+        inner_w, inner_h = w - 20, h - 30 - CAPTION_H - PLAYED_H
         self.picture = Cover()
         self.picture.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.picture.setFixedSize(inner_w, inner_h)
@@ -78,6 +90,10 @@ class StateTile(Tappable):
         below.addWidget(self.when, 1)
         below.addWidget(self.caption)
         layout.addLayout(below)
+        self.played = QLabel(played_text(state.played))  # how long was played up to this state
+        self.played.setObjectName("cardMeta")
+        self.played.setFixedHeight(PLAYED_H)
+        layout.addWidget(self.played)
 
 
 class SaveStatesPage(QWidget):

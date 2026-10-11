@@ -841,7 +841,23 @@ class MainWindow(QMainWindow):
         if fetch is not None and retroarch.available() and retroarch.find_core(paths, game.system, core) is None:
             return self.download_core_then_launch(game, paths, core, fetch)
         ok, message = self.start_retroarch(game, paths)
+        if ok:
+            self.start_state_clock(0)  # started without a state: played from now
         return self._rom_started(game, games, ok, message, "RetroArch")
+
+    def start_state_clock(self, played: int) -> None:
+        """Play time of save states: so much was played up to here (a state just loaded: its
+        own time; a fresh start: nothing), the rest is counted from now."""
+        import time
+
+        self.state_clock = (int(played), time.monotonic())
+
+    def state_played(self) -> int:
+        """Seconds played up to now - what a state saved now gets."""
+        import time
+
+        played, since = getattr(self, "state_clock", (0, time.monotonic()))
+        return played + max(0, int(time.monotonic() - since))
 
     def start_retroarch(self, game, paths) -> tuple[bool, str]:
         """RetroArch with the game and everything chosen for it (also again, for another speed)."""
@@ -1292,9 +1308,11 @@ class MainWindow(QMainWindow):
         self._quick_menu_closed()  # back into the game; RetroArch saves / loads right away
         if mode == "load":
             if retroarch.send(savestates.load_command(slot)):
+                self.start_state_clock(savestates.read_played(savestates.state_file(paths, rom, slot)) or 0)
                 self.notify("State loaded", "💾")
             return
-        run_async(lambda: savestates.capture(paths, rom, slot, retroarch.send),
+        played = self.state_played()
+        run_async(lambda: savestates.capture(paths, rom, slot, retroarch.send, played=played),
                   lambda ok: self.notify(*(("State saved", "💾") if ok else
                                            ("Couldn't save the state - this game can't be saved right now", "⚠"))),
                   lambda _e: self.notify("Couldn't save the state", "⚠"), owner=self)
