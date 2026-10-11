@@ -76,6 +76,7 @@ def test_settings_lists_open_in_gaming_mode(qtbot, tagged, monkeypatch):
 
     monkeypatch.setenv("GAMINGCRYPT_SESSION", "1")
     monkeypatch.setattr(mode, "panel_size", lambda *a: (1280, 800))
+    monkeypatch.setattr(mode, "refresh_rates_available", lambda env=None: True)
     tab = SettingsTab(copy.deepcopy(DEFAULTS), lambda c: None, system=SystemControls(audio=FakeAudio()),
                       restart_gaming=lambda: None)
     qtbot.addWidget(tab)

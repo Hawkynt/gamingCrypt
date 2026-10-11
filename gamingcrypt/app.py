@@ -582,7 +582,7 @@ class MainWindow(QMainWindow):
             from gamingcrypt.session.mode import in_gaming_session
             from gamingcrypt.ui.quick_menu import QuickMenu
 
-            menu = self.quick_menu = QuickMenu(self, self.system, refresh_available=in_gaming_session(),
+            menu = self.quick_menu = QuickMenu(self, self.system, refresh_available=self.refresh_rates(),
                                                refresh_get=self.menu_refresh, refresh_set=self.set_menu_refresh)
             menu.closed.connect(self._quick_menu_closed)
             menu.force_quit.connect(self._force_quit)
@@ -609,9 +609,15 @@ class MainWindow(QMainWindow):
         menu.set_discs(len(rom.discs) if retroarch_game else 0, getattr(self, "disc_index", 0))
         menu.open_menu(appid, self.game_name(appid) if appid else "")
 
+    def refresh_rates(self) -> bool:
+        """Gaming mode on a screen with other refresh rates than its own."""
+        from gamingcrypt.session import mode
+
+        return mode.in_gaming_session() and mode.refresh_rates_available()
+
     def default_refresh(self) -> int:
-        """The screen's refresh rate from Settings (0: the panel's own)."""
-        return int(self.config["system"].get("gaming_refresh") or 0)
+        """The screen's refresh rate from Settings (0: the panel's own - also where it has no other)."""
+        return int(self.config["system"].get("gaming_refresh") or 0) if self.refresh_rates() else 0
 
     def menu_refresh(self) -> int:
         """What the quick menu shows: 0 ("Default") while it's the rate from Settings."""
@@ -1054,7 +1060,8 @@ class MainWindow(QMainWindow):
         stutter). Needs a panel gamescope knows refresh rates for (install.sh adds some)."""
         from gamingcrypt.session.mode import in_gaming_session
 
-        if not in_gaming_session() or not self.config["system"].get("follow_game_refresh"):
+        if not in_gaming_session() or not self.config["system"].get("follow_game_refresh") \
+                or not self.refresh_rates():
             return
         timer = getattr(self, "_refresh_timer", None)
         if timer is None:
@@ -2008,7 +2015,7 @@ def reset_upscaling_in_gaming_mode(window) -> None:
         from gamingcrypt.system import gamescope_ctl
 
         old = mode.take_out_refresh()  # once: it was one of gamescope's options
-        if old and not window.default_refresh():
+        if old and window.refresh_rates() and not window.default_refresh():
             window.config["system"]["gaming_refresh"] = old
             window.save(window.config)
         hz = window.default_refresh()

@@ -57,8 +57,8 @@ touch and controller, and can boot the device straight into a SteamOS-like gamin
 - 🕹️ **Controller first**: console-style D-pad navigation, stick and trigger calibration, button
   remapping, and a quick menu (volume, brightness, refresh rate, FPS limit, Bluetooth, force quit)
   during games.
-- 📺 **Refresh rate**: changed while you play - from the quick menu, from Settings (no restart),
-  and by itself for 50 Hz games - on panels gamescope knows refresh rates for.
+- 📺 **Refresh rate**: changed while you play - from the quick menu and from Settings (no
+  restart) - on screens gamescope has other rates for (e.g. the Steam Deck); hidden on the others.
 - ⚙️ **Device settings**: resolution, refresh rate, brightness, power limit (TDP), audio devices.
 - 🌗 Dark and light theme.
 

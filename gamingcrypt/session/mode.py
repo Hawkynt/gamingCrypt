@@ -135,36 +135,6 @@ DEFAULT_ARGS = "-f --xwayland-count 2 --default-touch-mode 4 --hide-cursor-delay
 REFRESH_RATES = [40, 45, 50, 55, 60]
 
 
-# How the display profile makes a lower refresh rate from the panel's own mode (see
-# session/gamescope/gamingcrypt-displays.lua, which reads the choice when gamescope starts).
-PANEL_TIMINGS = {
-    "front": "More blank lines after the picture",
-    "back": "More blank lines before the picture",
-    "sync": "A longer sync pulse",
-    "line": "Longer lines",
-    "clock": "A slower pixel clock",
-}
-DEFAULT_PANEL_TIMING = "front"
-
-
-def panel_timing_file(env: dict | None = None) -> Path:
-    return config_dir(env) / "panel-timing"
-
-
-def panel_timing(env: dict | None = None) -> str:
-    try:
-        name = panel_timing_file(env).read_text().strip()
-    except OSError:
-        return DEFAULT_PANEL_TIMING
-    return name if name in PANEL_TIMINGS else DEFAULT_PANEL_TIMING
-
-
-def set_panel_timing(name: str, env: dict | None = None) -> None:
-    if name not in PANEL_TIMINGS:
-        raise ValueError(name)
-    _write(panel_timing_file(env), name + "\n")
-
-
 def args_file(env: dict | None = None) -> Path:
     return config_dir(env) / "gamescope-args"
 
@@ -231,7 +201,8 @@ def take_out_refresh(env: dict | None = None) -> int | None:
     """A refresh rate among gamescope's own options ("-r 50", from Settings before 1.0.3) is taken
     out - from gamescope's next start on; returns it. On a 60 Hz panel that option didn't change
     the screen: gamescope only handed games every second frame (30 FPS, and emulators ran slow).
-    The rate is set while gamescope runs instead (gamescope_ctl.set_dynamic_refresh)."""
+    Where the screen has other rates, one is set while gamescope runs instead
+    (gamescope_ctl.set_dynamic_refresh)."""
     current = args_file(env)
     if not current.exists() or pending_file(env).exists():
         return None  # a change waiting for "keep?": not now
@@ -287,6 +258,24 @@ def actual_mode(env: dict | None = None) -> str | None:
         return None
     modes = re.findall(r"selecting mode (\d+x\d+@\d+Hz)", text)
     return modes[-1] if modes else None
+
+
+def known_display(env: dict | None = None) -> str | None:
+    """The profile gamescope has for the screen ("Steam Deck LCD"), from its log; None: it knows
+    none - then the screen has only its own refresh rate (gamescope changes the rate only on
+    panels it has a profile with other rates for)."""
+    try:
+        text = (state_dir(env) / "session.log").read_text(errors="replace")
+    except OSError:
+        return None
+    text = text[text.rfind("gaming mode: gamescope"):]  # this start of gamescope
+    found = re.findall(r"Got known display: \S+ \((.*)\)", text)
+    return found[-1] if found else None
+
+
+def refresh_rates_available(env: dict | None = None) -> bool:
+    """Can the screen's refresh rate be changed while gamescope runs?"""
+    return known_display(env) is not None
 
 
 def panel_size(sys_root: Path = Path("/sys")) -> tuple[int, int] | None:

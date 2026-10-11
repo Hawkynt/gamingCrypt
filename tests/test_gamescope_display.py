@@ -224,6 +224,7 @@ def test_settings_gamescope_controls(qtbot, monkeypatch):
 
     monkeypatch.setenv("GAMINGCRYPT_SESSION", "1")
     monkeypatch.setattr(mode, "panel_size", lambda *a: (1280, 800))
+    monkeypatch.setattr(mode, "refresh_rates_available", lambda env=None: True)
     restarts = []
     tab = SettingsTab(copy.deepcopy(DEFAULTS), lambda c: None, system=SystemControls(),
                       restart_gaming=lambda: restarts.append(1))
@@ -248,6 +249,7 @@ def test_refresh_rate_changes_without_restarting_gaming_mode(qtbot, monkeypatch)
 
     monkeypatch.setenv("GAMINGCRYPT_SESSION", "1")
     monkeypatch.setattr(mode, "panel_size", lambda *a: (1280, 800))
+    monkeypatch.setattr(mode, "refresh_rates_available", lambda env=None: True)
     restarts, rates, saved = [], [], []
     monkeypatch.setattr(gamescope_ctl, "set_dynamic_refresh", lambda hz, runner=None: rates.append(hz) or True)
     tab = SettingsTab(copy.deepcopy(DEFAULTS), saved.append, system=SystemControls(),
@@ -279,6 +281,7 @@ def test_a_refresh_rate_among_gamescopes_options_is_taken_out(qtbot, monkeypatch
 
     monkeypatch.setenv("GAMINGCRYPT_SESSION", "1")
     monkeypatch.setattr(mode, "panel_size", lambda *a: (1280, 800))
+    monkeypatch.setattr(mode, "refresh_rates_available", lambda env=None: True)
     mode.apply_display(None, None, 50)
     mode.confirm_display()
     restarts = []
@@ -310,6 +313,7 @@ def test_start_in_gaming_mode_sets_the_refresh_rate_from_settings(qtbot, monkeyp
 
     monkeypatch.setattr(mode, "in_gaming_session", lambda env=None: True)
     monkeypatch.setattr(upscaling, "available", lambda *a, **k: False)
+    monkeypatch.setattr(mode, "refresh_rates_available", lambda env=None: True)
     monkeypatch.setattr(gamescope_ctl, "set_focus_order", lambda order, runner=None: True)
     monkeypatch.setattr(gamescope_ctl, "set_window_appid", lambda *a, **k: True)
     rates, saved = [], []
@@ -327,35 +331,6 @@ def test_start_in_gaming_mode_sets_the_refresh_rate_from_settings(qtbot, monkeyp
     assert window.set_menu_refresh(40) and window.set_menu_refresh(0) and rates == [50, 40, 50]
 
 
-def test_how_a_lower_rate_is_made_is_a_choice(qtbot, monkeypatch):
-    """Panels differ (wrong colours with one way, a shifted picture with another): Settings writes
-    the choice where the display profile reads it - at gamescope's start, so gaming mode restarts."""
-    from gamingcrypt.config import DEFAULTS
-    from gamingcrypt.system.controls import SystemControls
-    from gamingcrypt.ui.settings_tab import SettingsTab
-
-    assert mode.panel_timing() == "front" and list(mode.PANEL_TIMINGS) == ["front", "back", "sync", "line", "clock"]
-    mode.panel_timing_file().parent.mkdir(parents=True, exist_ok=True)
-    mode.panel_timing_file().write_text("whatever")
-    assert mode.panel_timing() == "front"
-    with pytest.raises(ValueError):
-        mode.set_panel_timing("whatever")
-    monkeypatch.setenv("GAMINGCRYPT_SESSION", "1")
-    monkeypatch.setattr(mode, "panel_size", lambda *a: (1280, 800))
-    restarts = []
-    tab = SettingsTab(copy.deepcopy(DEFAULTS), lambda c: None, system=SystemControls(),
-                      restart_gaming=lambda: restarts.append(1))
-    qtbot.addWidget(tab)
-    d = tab.display_section
-    assert d.gs_timing.currentData() == "front" and "(default)" in d.gs_timing.currentText()
-    assert d.gs_apply.text() == "Apply"
-    d.gs_timing.setCurrentIndex(d.gs_timing.findData("line"))
-    assert "restarts gaming mode" in d.gs_apply.text()
-    d.gs_apply.click()
-    assert restarts == [1] and mode.panel_timing() == "line"
-    assert mode.panel_timing_file().read_text() == "line\n"
-
-
 def test_following_50_hz_games_is_a_switch(qtbot, monkeypatch):
     from gamingcrypt.config import DEFAULTS
     from gamingcrypt.system.controls import SystemControls
@@ -363,6 +338,7 @@ def test_following_50_hz_games_is_a_switch(qtbot, monkeypatch):
 
     monkeypatch.setenv("GAMINGCRYPT_SESSION", "1")
     monkeypatch.setattr(mode, "panel_size", lambda *a: (1280, 800))
+    monkeypatch.setattr(mode, "refresh_rates_available", lambda env=None: True)
     saved = []
     tab = SettingsTab(copy.deepcopy(DEFAULTS), saved.append, system=SystemControls())
     qtbot.addWidget(tab)
@@ -372,3 +348,43 @@ def test_following_50_hz_games_is_a_switch(qtbot, monkeypatch):
     assert saved[-1]["system"]["follow_game_refresh"] is True and d.gs_follow.text().startswith("☑")
     d.gs_follow.click()
     assert saved[-1]["system"]["follow_game_refresh"] is False
+
+
+def test_which_screens_have_other_refresh_rates(tmp_path, monkeypatch):
+    """gamescope changes the rate only on panels it has a profile for - its log says which it found."""
+    e = env(tmp_path)
+    assert mode.known_display(e) is None and not mode.refresh_rates_available(e)
+    log = mode.state_dir(e) / "session.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text("Mon gaming mode: gamescope -e -f\n"
+                   "[gamescope] [Info]  drm: Got known display: steamdeck_lcd (Steam Deck LCD)\n"
+                   "[gamescope] [Info]  drm: selecting mode 800x1280@60Hz\n")
+    assert mode.known_display(e) == "Steam Deck LCD" and mode.refresh_rates_available(e)
+    with log.open("a") as fh:  # the next start: another screen, one gamescope doesn't know
+        fh.write("Tue gaming mode: gamescope -e -f\n[gamescope] [Info]  drm: selecting mode 800x1280@60Hz\n")
+    assert mode.known_display(e) is None and not mode.refresh_rates_available(e)
+
+
+def test_no_refresh_rates_where_the_screen_has_none(qtbot, monkeypatch):
+    from gamingcrypt.config import DEFAULTS
+    from gamingcrypt.system import gamescope_ctl
+    from gamingcrypt.system.controls import SystemControls
+    from gamingcrypt.ui.settings_tab import SettingsTab
+
+    monkeypatch.setenv("GAMINGCRYPT_SESSION", "1")
+    monkeypatch.setattr(mode, "panel_size", lambda *a: (1280, 800))
+    monkeypatch.setattr(mode, "refresh_rates_available", lambda env=None: False)
+    rates, restarts = [], []
+    monkeypatch.setattr(gamescope_ctl, "set_dynamic_refresh", lambda hz, runner=None: rates.append(hz) or True)
+    config = copy.deepcopy(DEFAULTS)
+    config["system"]["gaming_refresh"] = 50  # from when it was offered
+    tab = SettingsTab(config, lambda c: None, system=SystemControls(), restart_gaming=lambda: restarts.append(1))
+    qtbot.addWidget(tab)
+    tab.show()
+    d = tab.display_section
+    assert d.gs_resolution.isVisibleTo(tab) and not d.gs_refresh.isVisibleTo(tab) and not d.gs_follow.isVisibleTo(tab)
+    d.gs_apply.click()
+    assert rates == [] and restarts == [] and config["system"]["gaming_refresh"] == 0
+    d.gs_resolution.setCurrentIndex(d.gs_resolution.findData("960x600"))
+    d.gs_apply.click()  # the resolution still works as always
+    assert restarts == [1] and mode.parse_display(mode.read_args()) == {"width": 960, "height": 600}

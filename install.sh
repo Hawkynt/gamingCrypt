@@ -471,15 +471,13 @@ Categories=Game;
 ENTRY
 }
 
-install_gamescope_displays() {
-    # refresh rates for panels gamescope has no profile for (games at 50 Hz); read when gaming mode starts
-    # gamescope reads ~/.config/gamescope/scripts (older ones ~/.config/gamescope): in "scripts" both find it
+remove_gamescope_displays() {
+    # GamingCrypt's own display profile (refresh rates for the AYANEO 2021 panel) is gone: the panel
+    # shows nothing but its own 60 Hz right
     local dir="${XDG_CONFIG_HOME:-$HOME/.config}/gamescope"
-    mkdir -p "$dir/scripts"
-    rm -f "$dir/gamingcrypt-displays.lua"  # where it was before: gamescope never read it there
-    cp "$SRC_DIR/gamingcrypt/session/gamescope/gamingcrypt-displays.lua" "$dir/scripts/"
+    rm -f "$dir/gamingcrypt-displays.lua" "$dir/scripts/gamingcrypt-displays.lua"
 }
-install_gamescope_displays
+remove_gamescope_displays
 
 if [[ $WITH_SUDO -eq 1 ]]; then
     install_helper

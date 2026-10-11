@@ -221,29 +221,27 @@ class DisplaySection(Section):
         wanted_hz = current.get("refresh") or self.config["system"].get("gaming_refresh") or 0
         self.gs_refresh.setCurrentIndex(max(0, self.gs_refresh.findData(wanted_hz)))
         self.row("Resolution", self.gs_resolution)
-        self.row("Refresh rate", self.gs_refresh)
-        # how a rate below the panel's own is made: panels differ in what they show right
-        self.gs_timing = QComboBox()
-        for name, label in mode.PANEL_TIMINGS.items():
-            self.gs_timing.addItem(label + (" (default)" if name == mode.DEFAULT_PANEL_TIMING else ""), name)
-        self.gs_timing.setCurrentIndex(max(0, self.gs_timing.findData(mode.panel_timing())))
-        self.row("Lower rates by", self.gs_timing)
+        # other refresh rates: only where the screen has them (a panel gamescope has a profile for)
+        self.gs_rates = mode.refresh_rates_available()
+        if self.gs_rates:
+            self.row("Refresh rate", self.gs_refresh)
+        else:
+            self.gs_refresh.setCurrentIndex(0)
+            self.gs_refresh.hide()
         actual = mode.actual_mode()
         self.body.addWidget(_label("Lower resolutions are upscaled to the screen: more FPS, less power."
                                    + (f" Screen right now: {actual}." if actual else "")))
         self.gs_apply = big_button("Apply", "primary")
         self.gs_apply.clicked.connect(self.apply_gamescope)
         self.gs_resolution.currentIndexChanged.connect(lambda _i: self._label_apply())
-        self.gs_timing.currentIndexChanged.connect(lambda _i: self._label_apply())
         self._label_apply()
         self.body.addWidget(self.gs_apply, alignment=Qt.AlignmentFlag.AlignLeft)
-        self.body.addWidget(_label("A lower refresh rate looks wrong (shifted picture, wrong colours)? Try another "
-                                   "way under \"Lower rates by\" - it's used after gaming mode restarted."))
         self.gs_follow = big_button("", checkable=True)
         self.gs_follow.setChecked(bool(self.config["system"].get("follow_game_refresh")))
         self.gs_follow.toggled.connect(self.set_follow_games)
         self._label_follow()
         self.body.addWidget(self.gs_follow, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.gs_follow.setVisible(self.gs_rates)
 
     def _label_follow(self) -> None:
         self.gs_follow.setText(("☑" if self.gs_follow.isChecked() else "☐") + "  50 Hz games: screen at 50 Hz")
@@ -262,8 +260,7 @@ class DisplaySection(Section):
         native = mode.panel_size() or (1280, 800)
         current = mode.parse_display(mode.read_args())
         now = f"{current.get('width', native[0])}x{current.get('height', native[1])}"
-        return (self.gs_resolution.currentData() != now or "refresh" in current
-                or self.gs_timing.currentData() != mode.panel_timing())  # the profile is read at gamescope's start
+        return self.gs_resolution.currentData() != now or "refresh" in current
 
     def _label_apply(self) -> None:
         self.gs_apply.setText("Apply - restarts gaming mode" if self._needs_restart() else "Apply")
@@ -273,17 +270,18 @@ class DisplaySection(Section):
 
         w, h = (int(v) for v in self.gs_resolution.currentData().split("x"))
         native = mode.panel_size() or (1280, 800)
-        refresh = self.gs_refresh.currentData() or 0
+        refresh = (self.gs_refresh.currentData() or 0) if self.gs_rates else 0
         self.config["system"]["gaming_refresh"] = refresh  # set again at every start (see app)
         self.save(self.config)
         if not self._needs_restart():
+            if not self.gs_rates:
+                return  # nothing changed
             from gamingcrypt.system import gamescope_ctl
 
             ok = (self.set_refresh or gamescope_ctl.set_dynamic_refresh)(refresh)
             set_status(self.status, f"Refresh rate: {self.gs_refresh.currentText()}" if ok
                        else "Could not change the refresh rate", error=not ok)
             return
-        mode.set_panel_timing(self.gs_timing.currentData())
         size = (None, None) if (w, h) == native else (w, h)
         mode.apply_display(size[0], size[1], None)
         set_status(self.status, "Closing Steam and restarting gaming mode - you'll be asked to keep the "
