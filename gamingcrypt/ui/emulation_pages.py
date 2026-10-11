@@ -13,8 +13,9 @@ from gamingcrypt.ui.game_widgets import (COVER_H, COVER_W, Cover, card_margins, 
                                         placeholder_cover)
 from gamingcrypt.ui.widgets import FlowLayout, big_button, enable_touch_scroll, set_status
 
-def load_rom_cover(label: QLabel, game: RomGame, covers, w: int, h: int) -> None:
-    """Placeholder first; the box art from the drive's cache or libretro-thumbnails when it comes."""
+def load_rom_cover(label: QLabel, game: RomGame, covers, w: int, h: int, done=None) -> None:
+    """Placeholder first; the box art from the drive's cache or libretro-thumbnails when it comes.
+    done(path): after looking for it (None: there's none)."""
     from PySide6.QtCore import Qt as _Qt
     from PySide6.QtGui import QPixmap
 
@@ -25,12 +26,14 @@ def load_rom_cover(label: QLabel, game: RomGame, covers, w: int, h: int) -> None
         return
 
     def show(path) -> None:
-        if path is None or not shiboken6.isValid(label):
+        if not shiboken6.isValid(label):
             return
-        pixmap = QPixmap(str(path))
+        pixmap = QPixmap(str(path)) if path is not None else QPixmap()
         if not pixmap.isNull():
             label.setPixmap(pixmap.scaled(w, h, _Qt.AspectRatioMode.KeepAspectRatio,
                                           _Qt.TransformationMode.SmoothTransformation))
+        if done is not None:
+            done(path)
 
     cached = covers.cached(game)
     if cached is not None:
@@ -276,7 +279,8 @@ class RomGamePage(QWidget):
         self.cover = Cover()
         self.cover.setFixedSize(300, 400)
         self.cover.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
-        load_rom_cover(self.cover, game, getattr(tab, "covers", None), 300, 400)
+        load_rom_cover(self.cover, game, getattr(tab, "covers", None), 300, 400,
+                       done=lambda _path: self.show_recognised())
         body.addWidget(self.cover, alignment=Qt.AlignmentFlag.AlignTop)
         info = QVBoxLayout()
         info.setSpacing(14)
@@ -292,6 +296,11 @@ class RomGamePage(QWidget):
         self.facts = QLabel(f"{game.system.name}\n{files}\n{format_size(game.size)}\n{played}")
         self.facts.setObjectName("detailMeta")
         info.addWidget(self.facts)
+        # no cover, genre or year found by the file's name: which game is it? (the filters need it)
+        self.unknown_button = big_button("❓ Not recognised - choose the game")
+        self.unknown_button.clicked.connect(lambda: tab.open_identify(self.game))
+        self.unknown_button.hide()
+        info.addWidget(self.unknown_button, alignment=Qt.AlignmentFlag.AlignLeft)
         actions = QHBoxLayout()
         self.main_button = big_button("▶  Play", "primary")
         self.main_button.setMinimumWidth(260)
@@ -316,6 +325,10 @@ class RomGamePage(QWidget):
             options.addLayout(self._options())
         from gamingcrypt.ui.cover_picker import picture_button, picture_row
 
+        self.identify_button = big_button("")
+        self.identify_button.clicked.connect(lambda: tab.open_identify(self.game))
+        self.identify_button.setVisible(getattr(tab, "rom_names", None) is not None)
+        options.addWidget(self.identify_button, alignment=Qt.AlignmentFlag.AlignLeft)
         self.picture_button = picture_button(lambda: tab.open_cover_picker(self.game))
         options.addWidget(picture_row(self.picture_button))
         self.remove_button = big_button("🗑 Remove", "danger")
@@ -326,6 +339,7 @@ class RomGamePage(QWidget):
         from gamingcrypt.ui.options_popup import options_popup
 
         self.options_popup = options_popup(self, self.options_panel, self.options_button, game.name)
+        self.show_recognised()
         self.status = QLabel("")
         self.status.setObjectName("status")
         self.status.setWordWrap(True)
@@ -341,6 +355,19 @@ class RomGamePage(QWidget):
         self.scroll.setWidget(content)
         enable_touch_scroll(self.scroll)
         layout.addWidget(self.scroll, 1)
+
+    def show_recognised(self) -> None:
+        """Recognised: a cover, a genre or a year was found for it - or the game was chosen by hand."""
+        if not hasattr(self, "options_popup"):
+            return  # a cover from the drive is there before the page is built: asked again at its end
+        names = getattr(self.tab, "rom_names", None)
+        covers, facts = getattr(self.tab, "covers", None), getattr(self.tab, "rom_facts", None)
+        chosen = names.get(self.game) if names is not None else None
+        known = bool(chosen) or (covers is not None and covers.cached(self.game) is not None) or (
+            facts is not None and any(facts.facts(self.game)))
+        self.unknown_button.setVisible(names is not None and not known)
+        if hasattr(self, "identify_button"):
+            self.identify_button.setText(f"🔎 Game: {chosen}" if chosen else "🔎 Which game is this?")
 
     def toggle_options(self, visible: bool) -> None:
         self.options_popup.set_open(visible)

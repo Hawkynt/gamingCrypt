@@ -297,8 +297,8 @@ def test_emulated_games_in_the_genre_filter(qtbot, emu, monkeypatch):
 
     asked = []
     original = rom_facts.RomFacts.__init__
-    monkeypatch.setattr(rom_facts.RomFacts, "__init__", lambda self, paths, get=None, now=time.time:
-                        original(self, paths, get=libretro(asked), now=now))
+    monkeypatch.setattr(rom_facts.RomFacts, "__init__", lambda self, paths, get=None, now=time.time, **kw:
+                        original(self, paths, get=libretro(asked), now=now, **kw))
     tab = tab_with(qtbot, [], emulation_root=str(emu.root))
     home = tab.home
     qtbot.waitUntil(lambda: home.genre_combo.findData("Platform") > 0)

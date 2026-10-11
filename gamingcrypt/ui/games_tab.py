@@ -534,10 +534,15 @@ class GamesTab(QStackedWidget):
         self.emulation = EmulationPaths(emulation_root) if emulation_root else None
         from gamingcrypt.emulation.covers import Covers
 
-        self.covers = Covers(self.emulation) if self.emulation is not None else None  # box art
+        from gamingcrypt.emulation.names import Names
+
+        # which game a file is, where the automatic matching was helped by hand
+        self.rom_names = Names(self.emulation) if self.emulation is not None else None
+        self.covers = Covers(self.emulation, names=self.rom_names) if self.emulation is not None else None  # box art
         from gamingcrypt.emulation.rom_facts import RomFacts
 
-        self.rom_facts = RomFacts(self.emulation) if self.emulation is not None else None  # genres, years
+        self.rom_facts = (RomFacts(self.emulation, names=self.rom_names)  # genres, years
+                          if self.emulation is not None else None)
         from gamingcrypt.emulation.playtime import PlayLog
 
         self.play_log = PlayLog(self.emulation) if self.emulation is not None else None
@@ -1036,6 +1041,35 @@ class GamesTab(QStackedWidget):
             self._filling_facts = False  # offline: again with the next reload
 
         run_async(work, done, failed, owner=self)
+
+    # which game an emulated file is, chosen by hand -----------------------------
+    def open_identify(self, game) -> None:
+        from gamingcrypt.ui.identify_page import IdentifyPage
+
+        if self.rom_names is None:
+            return
+        page = IdentifyPage(self, game)
+        page.chosen.connect(lambda name: self.identified(game, name))
+        self.push(page)
+        page.search.setFocus()
+
+    def identified(self, game, name) -> None:
+        """Its cover, genre and year by that name from now on (name None: found automatically again)."""
+        from PySide6.QtGui import QPixmapCache
+
+        self.rom_names.set(game, name or None)
+        self.covers.forget(game)
+        self.rom_facts.forget(game)
+        QPixmapCache.clear()  # the same file name, a new picture
+        self.back()
+        self.refresh_covers(game)
+        self.home.invalidate_facts()
+        self.home.refresh_results()  # the filters know its genre and year now
+        from gamingcrypt.ui.emulation_pages import RomGamePage
+
+        for page in self.pages_of(RomGamePage):
+            if page.game.appid == game.appid:
+                page.show_recognised()
 
     # a game's picture, chosen by hand ----------------------------------------
     def open_cover_picker(self, game) -> None:

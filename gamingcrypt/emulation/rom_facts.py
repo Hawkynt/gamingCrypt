@@ -36,7 +36,9 @@ def split_genres(value: str) -> tuple[str, ...]:
 
 
 class RomFacts:
-    def __init__(self, paths: EmulationPaths, get: Callable | None = None, now: Callable[[], float] = time.time):
+    def __init__(self, paths: EmulationPaths, get: Callable | None = None, now: Callable[[], float] = time.time,
+                 names=None):
+        self.names = names  # which game a file is, where it was chosen by hand (emulation/names)
         self.folder = paths.config / "metadata"
         self.get = get or (lambda url: requests.get(url, timeout=30))
         self.now = now
@@ -90,6 +92,10 @@ class RomFacts:
         self._found = {k: v for k, v in self._found.items() if k[0] != system_id}
         return True
 
+    def forget(self, game: RomGame) -> None:
+        """Another game was chosen for the file: matched anew."""
+        self._found.pop((game.system.id, game.path.name), None)
+
     def facts(self, game: RomGame) -> tuple[tuple[str, ...], int | None]:
         """(genres, release year) of the game - what the lists know (no network)."""
         from gamingcrypt.emulation.covers import best_match
@@ -101,12 +107,14 @@ class RomFacts:
         if not table:
             return (), None
         genres, years = table.get("genre") or {}, table.get("releaseyear") or {}
-        stem = game.path.stem
+        chosen = self.names.get(game) if self.names is not None else None
+        stem = chosen or game.path.stem
 
         def find(names: dict) -> str | None:
             if stem in names:
                 return names[stem]
-            match = best_match(game.path.name, list(names))
+            # (a chosen name with other tags than the list's: "(USA)" for "(USA, Europe)")
+            match = best_match(f"{chosen}.rom" if chosen else game.path.name, list(names))
             return names.get(match) if match else None
 
         genre, year = find(genres), find(years)

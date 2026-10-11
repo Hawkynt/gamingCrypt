@@ -95,7 +95,9 @@ def best_match(filename: str, names: list[str]) -> str | None:
 
 
 class Covers:
-    def __init__(self, paths: EmulationPaths, get: Callable | None = None, now: Callable[[], float] = time.time):
+    def __init__(self, paths: EmulationPaths, get: Callable | None = None, now: Callable[[], float] = time.time,
+                 names=None):
+        self.names = names  # which game a file is, where it was chosen by hand (emulation/names)
         self.folder = paths.config / "covers"
         self.get = get or (lambda url: requests.get(url, timeout=15))
         self.now = now
@@ -106,6 +108,14 @@ class Covers:
     def cached(self, game: RomGame) -> Path | None:
         path = self.path(game)
         return path if path.exists() else None
+
+    def forget(self, game: RomGame) -> None:
+        """Another game was chosen for the file: its cover is fetched anew."""
+        for path in (self.path(game), self.path(game).with_suffix(MISS)):
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     def _missed_recently(self, game: RomGame) -> bool:
         miss = self.path(game).with_suffix(MISS)
@@ -159,16 +169,17 @@ class Covers:
         if cached is not None or self._missed_recently(game):
             return cached
         path = self.path(game)
-        for url in urls(game):
+        chosen = self.names.get(game) if self.names is not None else None
+        for url in ([] if chosen else urls(game)):
             result = self._download(url, path)
             if result is None:
                 return None  # offline: try again later
             if result:
                 return path
-        names = self.index(game)
-        if names is None:
+        names = None if chosen else self.index(game)
+        if names is None and not chosen:
             return None  # offline
-        match = best_match(game.path.name, names)
+        match = BAD_CHARS.sub("_", chosen) if chosen else best_match(game.path.name, names)
         if match is not None:
             playlist = PLAYLISTS[game.system.id]
             result = self._download(f"{BASE}/{quote(playlist)}/Named_Boxarts/{quote(match)}.png", path)
