@@ -86,13 +86,18 @@ def test_remove_from_the_game_page(qtbot, tab, emu):
     confirm = page.confirm
     assert confirm is not None and "Really remove Mario?" in confirm.question.text()
     assert (emu.roms / "snes" / "Mario.sfc").exists()  # nothing yet
-    assert confirm.saves_button.isVisible() and "2 files" in confirm.saves_button.text()
+    assert not confirm.keep_button.isVisible() and not confirm.none.isVisible()
+    confirm.remove_button.click()
+    # it has saves: asked on its own, before anything is deleted
+    assert "Delete them too?" in confirm.question.text() and "Mario has" in confirm.question.text()
+    assert "save state" in confirm.question.text() or "memory card" in confirm.question.text()
+    assert confirm.keep_button.isVisible() and confirm.delete_saves_button.isVisible()
+    assert not confirm.remove_button.isVisible() and (emu.roms / "snes" / "Mario.sfc").exists()
     confirm.cancel_button.click()
     assert page.confirm is None and (emu.roms / "snes" / "Mario.sfc").exists()
     page.remove_button.click()
-    page.confirm.saves_button.click()  # the saves too
-    assert page.confirm.saves_button.text().startswith("☑")
     page.confirm.remove_button.click()
+    page.confirm.delete_saves_button.click()  # the saves too
     qtbot.waitUntil(lambda: tab.currentWidget() is not page)
     assert not (emu.roms / "snes" / "Mario.sfc").exists() and not (emu.saves / "Snes9x" / "Mario.srm").exists()
     assert "Mario removed" in tab.home.notice.text()
@@ -115,7 +120,9 @@ def test_storage_lists_and_removes_emulated_games(qtbot, emu):
     assert "Mario\nSNES" in text.text() and "saves" in text.text()
     remove.click()
     assert page.confirm is not None and (emu.roms / "snes" / "Mario.sfc").exists()
-    page.confirm.remove_button.click()  # without the saves
+    page.confirm.remove_button.click()
+    assert (emu.roms / "snes" / "Mario.sfc").exists()  # asked about the saves first
+    page.confirm.keep_button.click()  # without the saves
     qtbot.waitUntil(lambda: bool(changed) and len(page.rom_rows) == 2)
     assert (emu.saves / "Snes9x" / "Mario.srm").exists() and "saves are kept" in page.status.text()
 
@@ -130,3 +137,27 @@ def test_storage_doesnt_remove_a_running_game(qtbot, emu):
     qtbot.waitUntil(lambda: len(page.rom_rows) == 3)
     page.rom_rows[mario.appid][1].click()
     assert page.confirm is None and "Close the game first" in page.status.text()
+
+
+def test_a_game_without_saves_is_removed_after_one_question(qtbot, emu):
+    from gamingcrypt.ui.remove_rom import RemoveConfirm
+
+    game = next(g for g in scan(emu, BY_ID["snes"]) if g.name != "Mario" and not removal.save_files(emu, g))
+    confirm = RemoveConfirm(emu, game)
+    qtbot.addWidget(confirm)
+    confirm.show()
+    assert confirm.none.isVisible() and not confirm.keep_button.isVisible()
+    said = []
+    confirm.removed.connect(said.append)
+    confirm.remove_button.click()
+    qtbot.waitUntil(lambda: bool(said))
+    assert "removed" in said[0] and "kept" not in said[0] and not game.path.exists()
+
+
+def test_what_a_game_has_saved(emu):
+    from gamingcrypt.ui.remove_rom import saves_text
+
+    states, card = emu.states / "Mario.state", emu.saves / "Snes9x" / "Mario.srm"
+    extras = [emu.states / "Mario.state.png", emu.states / "Mario.state.time", emu.states / "Mario.state3"]
+    assert saves_text(emu, [states, *extras, card]) == "2 save states and its memory card"
+    assert saves_text(emu, [states]) == "1 save state" and saves_text(emu, [card]) == "its memory card"

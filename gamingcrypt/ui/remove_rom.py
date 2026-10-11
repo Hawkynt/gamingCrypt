@@ -14,7 +14,22 @@ from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import big_button
 
 
+def saves_text(paths, saves) -> str:
+    """"3 save states and its memory card" - what a game has besides its files."""
+    states = [f for f in saves if paths.states in f.parents]
+    count = sum(1 for f in states if not f.name.endswith((".png", ".time")))
+    parts = []
+    if count:
+        parts.append(f"{count} save state{'s' if count != 1 else ''}")
+    if len(states) < len(saves):
+        parts.append("its memory card")
+    return " and ".join(parts)
+
+
 class RemoveConfirm(QFrame):
+    """Two questions: really remove it? - and, when it has any, whether its save states and
+    memory card are deleted too (asked on its own: a tick box next to Remove was easy to miss)."""
+
     removed = Signal(str)  # what happened
     cancelled = Signal()
 
@@ -29,39 +44,44 @@ class RemoveConfirm(QFrame):
                                "are deleted from the drive.")
         self.question.setWordWrap(True)
         layout.addWidget(self.question)
-        saves = self.plan.saves
-        self.saves_button = big_button("", checkable=True)
-        self.saves_button.toggled.connect(self._saves_text)
-        self._saves_text(False)
-        self.saves_button.setVisible(bool(saves))
-        layout.addWidget(self.saves_button, alignment=Qt.AlignmentFlag.AlignLeft)
-        if not saves:
-            none = QLabel("It has no save states or memory card.")
-            none.setObjectName("cardMeta")
-            layout.addWidget(none)
+        self.none = QLabel("It has no save states or memory card.")
+        self.none.setObjectName("cardMeta")
+        self.none.setVisible(not self.plan.saves)
+        layout.addWidget(self.none)
         row = QHBoxLayout()
         self.remove_button = big_button("🗑 Remove", "danger")
-        self.remove_button.clicked.connect(self.confirm)
+        self.remove_button.clicked.connect(self.ask_saves if self.plan.saves else lambda: self.confirm(False))
+        # the second question's answers
+        self.keep_button = big_button("Keep them")
+        self.keep_button.clicked.connect(lambda: self.confirm(False))
+        self.delete_saves_button = big_button("🗑 Delete them too", "danger")
+        self.delete_saves_button.clicked.connect(lambda: self.confirm(True))
         self.cancel_button = big_button("Cancel")
         self.cancel_button.clicked.connect(self.cancelled.emit)
-        row.addWidget(self.remove_button)
-        row.addWidget(self.cancel_button)
+        for button in (self.remove_button, self.keep_button, self.delete_saves_button, self.cancel_button):
+            row.addWidget(button)
+        self.keep_button.hide()
+        self.delete_saves_button.hide()
         row.addStretch()
         layout.addLayout(row)
 
-    def _saves_text(self, on: bool) -> None:
-        count = len(self.plan.saves)
-        self.saves_button.setText(f"{'☑' if on else '☐'}  Also delete its save states and memory card "
-                                  f"({count} file{'s' if count != 1 else ''}, {format_size(self.plan.saves_size)})")
+    def ask_saves(self) -> None:
+        """The game goes - and what was saved in it?"""
+        what = saves_text(self.paths, self.plan.saves)
+        self.question.setText(f"{self.game.name} has {what} ({format_size(self.plan.saves_size)}).\n"
+                              "Delete them too? Kept, they are there again when you add the game again.")
+        self.remove_button.hide()
+        self.keep_button.show()
+        self.delete_saves_button.show()
+        self.keep_button.setFocus(Qt.FocusReason.TabFocusReason)  # the safe answer first
 
     def gamepad_back(self) -> bool:
         self.cancelled.emit()
         return True
 
-    def confirm(self) -> None:
-        self.remove_button.setEnabled(False)
-        self.cancel_button.setEnabled(False)
-        with_saves = self.saves_button.isChecked()
+    def confirm(self, with_saves: bool) -> None:
+        for button in (self.remove_button, self.keep_button, self.delete_saves_button, self.cancel_button):
+            button.setEnabled(False)
         paths, game = self.paths, self.game
 
         def done(freed: int) -> None:
