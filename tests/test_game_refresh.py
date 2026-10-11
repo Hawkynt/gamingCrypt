@@ -2,6 +2,7 @@
 (every fifth frame twice - NFSU2 PAL on the AYANEO)."""
 
 import copy
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -77,7 +78,9 @@ def window(qtbot, tmp_path, monkeypatch):
         pages["Games"] = GamesTab(FakeService(), library_settings=cfg["libraries"], emulation_root=str(paths.root))
         return dict(pages)
 
-    w = MainWindow(copy.deepcopy(DEFAULTS), lambda c: None, page_factory=factory)
+    config = copy.deepcopy(DEFAULTS)
+    config["system"]["follow_game_refresh"] = True  # Settings -> Display: 50 Hz games at 50 Hz
+    w = MainWindow(config, lambda c: None, page_factory=factory)
     qtbot.addWidget(w)
     w.windowed = True
     w.show_shell()
@@ -95,6 +98,16 @@ def test_screen_follows_a_pal_game_and_comes_back(qtbot, window):
     window.game_watcher._stop()
     window.game_watcher.finished.emit(window._game.appid)
     qtbot.waitUntil(lambda: window._refresh["sets"] == [50, 0], timeout=3000)
+
+
+def test_the_screen_stays_as_it_is_unless_switched_on(qtbot, window):
+    """Off by default: not every panel shows 50 Hz right."""
+    assert DEFAULTS["system"]["follow_game_refresh"] is False
+    window.config["system"]["follow_game_refresh"] = False
+    window.launch_rom(window._game)
+    window._log.write_text(PAL_LOG)
+    qtbot.wait(1500)
+    assert window._refresh["sets"] == [] and getattr(window, "_refresh_timer", None) is None
 
 
 def test_a_60_hz_game_leaves_the_screen_alone(qtbot, window):
@@ -135,6 +148,9 @@ end
 gamescope.modegen.calc_vrefresh = function(mode, refresh)
     return math.floor((1000 * mode.clock) / (mode.htotal * mode.vtotal))
 end
+gamescope.modegen.calc_max_clock = function(mode, refresh)
+    return math.floor(((mode.htotal * mode.vtotal * refresh) + 999) / 1000)
+end
 function debug(text) end
 dofile("{LUA}")
 local panel = gamescope.config.known_displays.gamingcrypt_ayaneo_2021_lcd
@@ -142,21 +158,42 @@ print(panel.matches({{ vendor = "UGD", product = 0x1003, model = "" }}))
 print(panel.matches({{ vendor = "VLV", product = 0x3003, model = "" }}))
 print(panel.dynamic_refresh_rates[1], panel.dynamic_refresh_rates[#panel.dynamic_refresh_rates])
 local function own()  -- 800 x 1280 at 60 Hz
-    return {{ hdisplay = 800, htotal = 880, vdisplay = 1280, vsync_start = 1290, vsync_end = 1294, vtotal = 1310,
-             clock = 69168, vrefresh = 60 }}
+    return {{ hdisplay = 800, hsync_start = 810, hsync_end = 820, htotal = 880,
+             vdisplay = 1280, vsync_start = 1290, vsync_end = 1294, vtotal = 1310, clock = 69168, vrefresh = 60 }}
 end
 local m = panel.dynamic_modegen(own(), 50)
-print(m.vrefresh, m.clock, m.vtotal, m.vsync_start, m.vsync_end - m.vsync_start, m.vtotal - m.vsync_end)
+print(m.vrefresh, m.clock, m.htotal, m.hsync_start, m.vtotal, m.vsync_start, m.vsync_end - m.vsync_start,
+      m.vtotal - m.vsync_end)
 m = panel.dynamic_modegen(own(), 40)
 print(m.vrefresh, m.clock, m.vtotal)
 m = panel.dynamic_modegen(own(), 60)
 print(m.vrefresh, m.clock, m.vtotal)
 """)
-    out = subprocess.run(["lua", str(script)], capture_output=True, text=True, check=True).stdout.splitlines()
-    assert [line.split() for line in out[:3]] == [["4000"], ["-1"], ["40", "60"]]
-    # 50 Hz: 262 more blank lines, the same clock, the sync pulse and what follows it unchanged
-    assert out[3].split() == ["50", "69168", "1572", "1552", "4", "16"]
-    assert out[4].split() == ["40", "69168", "1965"] and out[5].split() == ["60", "69168", "1310"]
+
+    def run(timing=None):
+        """The profile as gamescope loads it, with Settings' choice of how a lower rate is made."""
+        config = tmp_path / "config" / "gamingcrypt"
+        config.mkdir(parents=True, exist_ok=True)
+        if timing is None:
+            (config / "panel-timing").unlink(missing_ok=True)
+        else:
+            (config / "panel-timing").write_text(timing + "\n")
+        env = {**os.environ, "XDG_CONFIG_HOME": str(tmp_path / "config")}
+        out = subprocess.run(["lua", str(script)], capture_output=True, text=True, check=True, env=env).stdout
+        return [line.split() for line in out.splitlines()]
+
+    out = run()
+    assert out[:3] == [["4000"], ["-1"], ["40", "60"]]
+    # rate, clock, pixels a line, sync at, lines, sync at, sync lines, lines after it
+    # 50 Hz, the default: 262 more blank lines before the sync pulse - the clock and the rest as they are
+    assert out[3] == ["50", "69168", "880", "810", "1572", "1552", "4", "16"]
+    assert out[4] == ["40", "69168", "1965"] and out[5] == ["60", "69168", "1310"]  # 60 Hz: the panel's own
+    assert run("front") == out and run("nonsense") == out
+    assert run("back")[3] == ["50", "69168", "880", "810", "1572", "1290", "4", "278"]  # after the pulse
+    assert run("sync")[3] == ["50", "69168", "880", "810", "1572", "1290", "266", "16"]  # the pulse itself
+    assert run("line")[3] == ["50", "69168", "1056", "986", "1310", "1290", "4", "16"]  # 176 more pixels a line
+    assert run("clock")[3] == ["50", "57640", "880", "810", "1310", "1290", "4", "16"]  # only the clock
+    assert all(run(t)[5] == ["60", "69168", "1310"] for t in ("back", "sync", "line", "clock"))
 
 
 def test_install_script_copies_the_profile(tmp_path):

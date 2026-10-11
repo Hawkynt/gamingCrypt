@@ -325,3 +325,50 @@ def test_start_in_gaming_mode_sets_the_refresh_rate_from_settings(qtbot, monkeyp
     monkeypatch.setattr(gamescope_ctl, "dynamic_refresh", lambda runner=None: 50)
     assert window.menu_refresh() == 0  # the quick menu: "Default" is what Settings says
     assert window.set_menu_refresh(40) and window.set_menu_refresh(0) and rates == [50, 40, 50]
+
+
+def test_how_a_lower_rate_is_made_is_a_choice(qtbot, monkeypatch):
+    """Panels differ (wrong colours with one way, a shifted picture with another): Settings writes
+    the choice where the display profile reads it - at gamescope's start, so gaming mode restarts."""
+    from gamingcrypt.config import DEFAULTS
+    from gamingcrypt.system.controls import SystemControls
+    from gamingcrypt.ui.settings_tab import SettingsTab
+
+    assert mode.panel_timing() == "front" and list(mode.PANEL_TIMINGS) == ["front", "back", "sync", "line", "clock"]
+    mode.panel_timing_file().parent.mkdir(parents=True, exist_ok=True)
+    mode.panel_timing_file().write_text("whatever")
+    assert mode.panel_timing() == "front"
+    with pytest.raises(ValueError):
+        mode.set_panel_timing("whatever")
+    monkeypatch.setenv("GAMINGCRYPT_SESSION", "1")
+    monkeypatch.setattr(mode, "panel_size", lambda *a: (1280, 800))
+    restarts = []
+    tab = SettingsTab(copy.deepcopy(DEFAULTS), lambda c: None, system=SystemControls(),
+                      restart_gaming=lambda: restarts.append(1))
+    qtbot.addWidget(tab)
+    d = tab.display_section
+    assert d.gs_timing.currentData() == "front" and "(default)" in d.gs_timing.currentText()
+    assert d.gs_apply.text() == "Apply"
+    d.gs_timing.setCurrentIndex(d.gs_timing.findData("line"))
+    assert "restarts gaming mode" in d.gs_apply.text()
+    d.gs_apply.click()
+    assert restarts == [1] and mode.panel_timing() == "line"
+    assert mode.panel_timing_file().read_text() == "line\n"
+
+
+def test_following_50_hz_games_is_a_switch(qtbot, monkeypatch):
+    from gamingcrypt.config import DEFAULTS
+    from gamingcrypt.system.controls import SystemControls
+    from gamingcrypt.ui.settings_tab import SettingsTab
+
+    monkeypatch.setenv("GAMINGCRYPT_SESSION", "1")
+    monkeypatch.setattr(mode, "panel_size", lambda *a: (1280, 800))
+    saved = []
+    tab = SettingsTab(copy.deepcopy(DEFAULTS), saved.append, system=SystemControls())
+    qtbot.addWidget(tab)
+    d = tab.display_section
+    assert not d.gs_follow.isChecked() and d.gs_follow.text().startswith("☐")  # off unless wanted
+    d.gs_follow.click()
+    assert saved[-1]["system"]["follow_game_refresh"] is True and d.gs_follow.text().startswith("☑")
+    d.gs_follow.click()
+    assert saved[-1]["system"]["follow_game_refresh"] is False

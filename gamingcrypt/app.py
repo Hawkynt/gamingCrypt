@@ -1054,7 +1054,7 @@ class MainWindow(QMainWindow):
         stutter). Needs a panel gamescope knows refresh rates for (install.sh adds some)."""
         from gamingcrypt.session.mode import in_gaming_session
 
-        if not in_gaming_session():
+        if not in_gaming_session() or not self.config["system"].get("follow_game_refresh"):
             return
         timer = getattr(self, "_refresh_timer", None)
         if timer is None:

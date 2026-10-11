@@ -135,6 +135,36 @@ DEFAULT_ARGS = "-f --xwayland-count 2 --default-touch-mode 4 --hide-cursor-delay
 REFRESH_RATES = [40, 45, 50, 55, 60]
 
 
+# How the display profile makes a lower refresh rate from the panel's own mode (see
+# session/gamescope/gamingcrypt-displays.lua, which reads the choice when gamescope starts).
+PANEL_TIMINGS = {
+    "front": "More blank lines after the picture",
+    "back": "More blank lines before the picture",
+    "sync": "A longer sync pulse",
+    "line": "Longer lines",
+    "clock": "A slower pixel clock",
+}
+DEFAULT_PANEL_TIMING = "front"
+
+
+def panel_timing_file(env: dict | None = None) -> Path:
+    return config_dir(env) / "panel-timing"
+
+
+def panel_timing(env: dict | None = None) -> str:
+    try:
+        name = panel_timing_file(env).read_text().strip()
+    except OSError:
+        return DEFAULT_PANEL_TIMING
+    return name if name in PANEL_TIMINGS else DEFAULT_PANEL_TIMING
+
+
+def set_panel_timing(name: str, env: dict | None = None) -> None:
+    if name not in PANEL_TIMINGS:
+        raise ValueError(name)
+    _write(panel_timing_file(env), name + "\n")
+
+
 def args_file(env: dict | None = None) -> Path:
     return config_dir(env) / "gamescope-args"
 

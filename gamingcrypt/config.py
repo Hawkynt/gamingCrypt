@@ -35,6 +35,9 @@ DEFAULTS: dict[str, Any] = {
         "power_limit_w": None,
         # Gaming mode: the screen's refresh rate in Hz (0 = the panel's own), set while gamescope runs.
         "gaming_refresh": 0,
+        # Gaming mode: the screen at 50 Hz while a 50 Hz (PAL) game runs. Off: not every panel
+        # shows a lower rate right (Settings -> Display has the ways to make one).
+        "follow_game_refresh": False,
         # Volume per press of the + / - buttons (gaming mode), -10..10.
         # Negative swaps the buttons, 0 turns them off.
         "volume_step": 5,
