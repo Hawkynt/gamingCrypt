@@ -10,10 +10,17 @@ local function rates(low, high)
     return list
 end
 
--- same timings as the panel's own mode, only the pixel clock follows the refresh rate
-local function slower_clock(base_mode, refresh)
+-- The panel's own mode with a longer pause between two pictures (more lines after the last
+-- visible one), so fewer pictures fit in a second. The pixel clock stays as it is: with a slower
+-- clock (the other way to a lower rate) this panel showed wrong, shifting colours.
+local function longer_blank(base_mode, refresh)
     local mode = base_mode
-    mode.clock = gamescope.modegen.calc_max_clock(mode, refresh)
+    local lines = math.floor((mode.clock * 1000) / (mode.htotal * refresh) + 0.5)
+    if lines <= mode.vtotal then
+        return mode -- the panel's own rate (or above it): as it is
+    end
+    local front_porch = mode.vsync_start - mode.vdisplay
+    gamescope.modegen.adjust_front_porch(mode, front_porch + (lines - mode.vtotal))
     mode.vrefresh = gamescope.modegen.calc_vrefresh(mode)
     return mode
 end
@@ -24,7 +31,7 @@ gamescope.config.known_displays.gamingcrypt_ayaneo_2021_lcd = {
     dynamic_refresh_rates = rates(40, 60),
     dynamic_modegen = function(base_mode, refresh)
         debug("[gamingcrypt] "..refresh.." Hz for the AYANEO 2021 LCD")
-        return slower_clock(base_mode, refresh)
+        return longer_blank(base_mode, refresh)
     end,
     matches = function(display)
         if display.vendor == "UGD" and display.product == 0x1003 then

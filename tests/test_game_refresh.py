@@ -118,22 +118,45 @@ def test_the_quick_menus_choice_wins(qtbot, window):
 
 @pytest.mark.skipif(shutil.which("lua") is None, reason="needs lua")
 def test_display_profile_for_the_ayaneo_panel(tmp_path):
-    """gamescope's Lua profile: matches the AYANEO 2021 panel (EDID UGD 0x1003), 40-60 Hz."""
+    """gamescope's Lua profile: matches the AYANEO 2021 panel (EDID UGD 0x1003), 40-60 Hz. A lower
+    rate is the panel's own mode with more blank lines - the pixel clock isn't touched (a slower
+    clock gave wrong, shifting colours on the panel)."""
     script = tmp_path / "check.lua"
     script.write_text(f"""
-gamescope = {{ config = {{ known_displays = {{}} }},
-  modegen = {{ calc_max_clock = function(mode, hz) return hz * 1000 end,
-              calc_vrefresh = function(mode) return mode.clock / 1000 end }} }}
+gamescope = {{ config = {{ known_displays = {{}} }}, modegen = {{}} }}
+-- as in gamescope's scripts/00-gamescope/common/modegen.lua
+gamescope.modegen.adjust_front_porch = function(mode, vfp)
+    local vsync = mode.vsync_end - mode.vsync_start
+    local vbp = mode.vtotal - mode.vsync_end
+    mode.vsync_start = mode.vdisplay + vfp
+    mode.vsync_end = mode.vsync_start + vsync
+    mode.vtotal = mode.vsync_end + vbp
+end
+gamescope.modegen.calc_vrefresh = function(mode, refresh)
+    return math.floor((1000 * mode.clock) / (mode.htotal * mode.vtotal))
+end
 function debug(text) end
 dofile("{LUA}")
 local panel = gamescope.config.known_displays.gamingcrypt_ayaneo_2021_lcd
 print(panel.matches({{ vendor = "UGD", product = 0x1003, model = "" }}))
 print(panel.matches({{ vendor = "VLV", product = 0x3003, model = "" }}))
 print(panel.dynamic_refresh_rates[1], panel.dynamic_refresh_rates[#panel.dynamic_refresh_rates])
-print(panel.dynamic_modegen({{ clock = 1 }}, 50).vrefresh)
+local function own()  -- 800 x 1280 at 60 Hz
+    return {{ hdisplay = 800, htotal = 880, vdisplay = 1280, vsync_start = 1290, vsync_end = 1294, vtotal = 1310,
+             clock = 69168, vrefresh = 60 }}
+end
+local m = panel.dynamic_modegen(own(), 50)
+print(m.vrefresh, m.clock, m.vtotal, m.vsync_start, m.vsync_end - m.vsync_start, m.vtotal - m.vsync_end)
+m = panel.dynamic_modegen(own(), 40)
+print(m.vrefresh, m.clock, m.vtotal)
+m = panel.dynamic_modegen(own(), 60)
+print(m.vrefresh, m.clock, m.vtotal)
 """)
-    out = subprocess.run(["lua", str(script)], capture_output=True, text=True, check=True).stdout.split()
-    assert out == ["4000", "-1", "40", "60", "50"] or out == ["4000", "-1", "40", "60", "50.0"]
+    out = subprocess.run(["lua", str(script)], capture_output=True, text=True, check=True).stdout.splitlines()
+    assert [line.split() for line in out[:3]] == [["4000"], ["-1"], ["40", "60"]]
+    # 50 Hz: 262 more blank lines, the same clock, the sync pulse and what follows it unchanged
+    assert out[3].split() == ["50", "69168", "1572", "1552", "4", "16"]
+    assert out[4].split() == ["40", "69168", "1965"] and out[5].split() == ["60", "69168", "1310"]
 
 
 def test_install_script_copies_the_profile(tmp_path):
