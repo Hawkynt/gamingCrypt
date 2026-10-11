@@ -22,6 +22,7 @@ from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import OnScreenKeyboard, big_button, enable_touch_scroll, set_status
 
 SUB_TABS = ["Device", "Network", "Controller", "Games", "Storage", "Security", "System"]
+ADMIN_ONLY = ("Games", "Security", "System")  # not there for other users
 # where what had a tab of its own before is now (notices and older callers still name them)
 MOVED = {"Services": "Network", "Health": "System", "Updates": "System"}
 LOCK_AFTER_SLEEP = [("Never", None), ("Right away", 0), ("After 5 minutes", 5), ("After 15 minutes", 15),
@@ -285,6 +286,11 @@ class SettingsTab(QStackedWidget):
             layout.addWidget(label)
             layout.addWidget(widget)
         layout.addStretch()
+        # Games (libraries, Steam), Security (the drive, the users) and System (updates) are the
+        # admin's: a user has the device's settings that are their own - look, display, controller …
+        self.admin_only = () if users.current(config).admin else ADMIN_ONLY
+        for name in self.admin_only:
+            self.sub_buttons[name].hide()
         self.show_sub_tab(SUB_TABS[0])
         self.addWidget(self.overview)
         self.refresh()
@@ -450,6 +456,8 @@ class SettingsTab(QStackedWidget):
 
     def show_sub_tab(self, name: str) -> None:
         name = MOVED.get(name, name)
+        if name in getattr(self, "admin_only", ()):
+            return
         self.current_sub_tab = name
         self.sub_stack.setCurrentWidget(self.sub_pages[name])
         for tab, button in self.sub_buttons.items():

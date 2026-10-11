@@ -151,10 +151,10 @@ def test_a_user_sees_only_themselves_and_changes_their_own_code(qtbot):
     tab = SettingsTab(cfg, lambda c: None, system=SystemControls())
     qtbot.addWidget(tab)
     tab.show()
-    tab.show_sub_tab("Security")
+    tab.show_sub_tab("Security")  # (not there for a user - see below; the section itself still knows who's who)
     section = tab.users_section
     assert list(section.rows) == [mia.id] and set(section.rows[mia.id]) == {"label", "code"}
-    assert not section.add_button.isVisibleTo(tab) and not tab.reset_button.isVisibleTo(tab)
+    assert section.add_button.isHidden() and tab.reset_button.isHidden()
     assert "logged in as Mia" in section.hint.text()
     section.rows[mia.id]["code"].click()
     flow = tab.currentWidget()
@@ -633,3 +633,160 @@ def test_ways_around_the_restrictions_are_the_admins(qtbot, tmp_path):
     tab = SettingsTab(old, lambda c: None, system=SystemControls())
     qtbot.addWidget(tab)
     assert not tab.services_page.isHidden()
+
+
+# --- settings that are a user's own, and those that aren't theirs at all ---------------------------
+
+def test_a_user_has_no_games_security_or_system_settings(qtbot):
+    from gamingcrypt.ui.settings_tab import SUB_TABS, SettingsTab
+
+    cfg, mia = a_user()
+    admin_tab = SettingsTab(cfg, lambda c: None, system=SystemControls())
+    qtbot.addWidget(admin_tab)
+    admin_tab.show()
+    assert all(not admin_tab.sub_buttons[name].isHidden() for name in SUB_TABS)
+    admin_tab.show_sub_tab("Security")
+    assert admin_tab.current_sub_tab == "Security"
+    users.enter(cfg, mia.id)
+    tab = SettingsTab(cfg, lambda c: None, system=SystemControls())
+    qtbot.addWidget(tab)
+    tab.show()
+    shown = [name for name in SUB_TABS if not tab.sub_buttons[name].isHidden()]
+    assert shown == ["Device", "Network", "Controller", "Storage"] and tab.current_sub_tab == "Device"
+    for name in ("Games", "Security", "System"):
+        tab.show_sub_tab(name)
+        assert tab.current_sub_tab == "Device"  # no way in
+
+
+def test_look_overlay_and_display_settings_are_each_users_own():
+    cfg, mia = a_user()
+    cfg["appearance"].update(theme="dark", text_size="normal")
+    cfg["overlay_bar"] = {"position": "top", "size": "small", "opacity": 30, "modules": ["fps"]}
+    cfg["system"].update(gaming_refresh=60, volume_step=5, lock_after_sleep_min=10)
+    users.enter(cfg, mia.id)
+    assert cfg["appearance"] == {"theme": "dark", "text_size": "normal"}  # she starts with what the admin has
+    assert cfg["overlay_bar"]["position"] == "top" and cfg["system"]["gaming_refresh"] == 60
+    cfg["appearance"]["theme"] = "light"
+    cfg["appearance"]["text_size"] = "larger"
+    cfg["overlay_bar"] = {"position": "bottom", "size": "large", "opacity": 80, "modules": ["fps", "battery"]}
+    cfg["system"].update(gaming_refresh=40, gaming_resolution="960x600", volume_step=10)
+    cfg["system"]["lock_after_sleep_min"] = 0  # the device's: for everybody
+    written = users.persistable(cfg)
+    assert written["appearance"] == {"theme": "dark", "text_size": "normal"}  # the admin's, untouched
+    assert written["overlay_bar"]["position"] == "top" and written["system"]["gaming_refresh"] == 60
+    assert written["system"]["volume_step"] == 5 and written["system"]["lock_after_sleep_min"] == 0
+    own = written["users"][0]
+    assert own["appearance"] == {"theme": "light", "text_size": "larger"} and own["overlay_bar"]["size"] == "large"
+    assert own["system"]["gaming_refresh"] == 40 and own["system"]["gaming_resolution"] == "960x600"
+    assert "lock_after_sleep_min" not in own["system"] and "session" not in written and users.KEPT not in written
+    users.leave(cfg)
+    assert cfg["appearance"]["theme"] == "dark" and cfg["overlay_bar"]["position"] == "top"
+    assert cfg["system"]["gaming_refresh"] == 60 and cfg["system"]["lock_after_sleep_min"] == 0
+    cfg["appearance"]["theme"] = "light"  # the admin changes theirs: hers stays hers
+    cfg["system"]["volume_step"] = 2
+    users.enter(cfg, mia.id)
+    assert cfg["appearance"] == {"theme": "light", "text_size": "larger"} and cfg["system"]["volume_step"] == 10
+    assert cfg["overlay_bar"]["modules"] == ["fps", "battery"]
+    users.enter(cfg, "admin")
+    assert cfg["system"]["volume_step"] == 2 and users.persistable(cfg)["appearance"]["text_size"] == "normal"
+
+
+def test_an_admin_without_overlay_settings_keeps_none(qtbot):
+    cfg, mia = a_user()
+    assert "overlay_bar" not in cfg
+    users.enter(cfg, mia.id)
+    assert users.persistable(cfg).get("overlay_bar") is None  # nothing invented for the admin
+    cfg["overlay_bar"] = {"position": "top"}
+    assert "overlay_bar" not in {k for k in users.persistable(cfg) if k != "users"}
+    assert users.persistable(cfg)["users"][0]["overlay_bar"] == {"position": "top"}
+    users.leave(cfg)
+    assert "overlay_bar" not in cfg
+
+
+def test_the_look_follows_who_logs_in(qtbot, tmp_path):
+    from PySide6.QtWidgets import QApplication
+
+    from gamingcrypt.app import MainWindow
+    from gamingcrypt.ui import theme
+
+    cfg, mia = a_user()
+    users.enter(cfg, mia.id)
+    cfg["appearance"].update(theme="light", text_size="large")
+    users.leave(cfg)
+    volume_file = tmp_path / "x.vc"
+    volume_file.write_bytes(b"x")
+    cfg["unlock"]["volume"] = str(volume_file)
+    volume = Volume(kdf.derive_password(ADMIN_CODE, cfg["unlock"]["kdf"]))
+    before = (theme.current, theme.text_size)
+    try:
+        theme.apply("dark", QApplication.instance(), "normal")
+        window = MainWindow(cfg, lambda c: None, volume.factory, page_factory=lambda c: {})
+        qtbot.addWidget(window)
+        lock = window.stack.currentWidget()
+        lock.user_buttons[mia.id].click()
+        lock.input.secret_entered.emit("1111")
+        qtbot.waitUntil(lambda: window.screen_name == "shell", timeout=10000)
+        assert (theme.current, theme.text_size) == ("light", "large")
+        window.panic_lock()
+        assert (theme.current, theme.text_size) == ("dark", "normal")  # the lock screen: as the admin has it
+    finally:
+        theme.apply(before[0], QApplication.instance(), before[1])
+
+
+def test_own_resolution_restarts_gaming_mode_once(qtbot, monkeypatch):
+    from gamingcrypt.app import MainWindow
+    from gamingcrypt.session import mode
+
+    cfg, mia = a_user()
+    monkeypatch.setattr(mode, "panel_size", lambda *a: (1280, 800))
+    saved = []
+    window = MainWindow(cfg, lambda c: saved.append(copy.deepcopy(c)), page_factory=lambda c: {})
+    qtbot.addWidget(window)
+    users.enter(cfg, mia.id)
+    assert not window.own_resolution_differs()  # nothing chosen: as it is
+    assert saved[-1]["system"]["gaming_resolution"] == "1280x800"  # what the admin has is noted for them
+    cfg["system"]["gaming_resolution"] = "960x600"
+    assert window.own_resolution_differs()
+    assert mode.parse_display(mode.read_args()) == {"width": 960, "height": 600} and not mode.display_pending()
+    assert not window.own_resolution_differs()  # after the restart: it's hers already
+    cfg["system"]["gaming_resolution"] = "123x45"  # not one of the sizes: left alone
+    assert not window.own_resolution_differs()
+    users.enter(cfg, "admin")
+    assert cfg["system"]["gaming_resolution"] == "1280x800" and window.own_resolution_differs()  # back to native
+    assert mode.parse_display(mode.read_args()) == {}
+
+
+def test_one_user_nothing_is_applied(qtbot, monkeypatch):
+    from gamingcrypt.app import MainWindow
+    from gamingcrypt.ui import theme
+
+    cfg = config()
+    cfg["appearance"]["theme"] = "light"
+    window = MainWindow(cfg, lambda c: None, page_factory=lambda c: {})
+    qtbot.addWidget(window)
+    called = []
+    monkeypatch.setattr(theme, "apply", lambda *a, **k: called.append(a))
+    monkeypatch.setattr(window, "own_resolution_differs", lambda: called.append("resolution"))
+    window.apply_own_settings(login=True)
+    assert called == []
+
+
+def test_the_admin_chooses_a_users_steam_account(qtbot, tab):
+    from types import SimpleNamespace
+
+    add(qtbot, tab, "Mia", "pin", "1111")
+    qtbot.waitUntil(lambda: tab.currentWidget() is tab.overview, timeout=10000)
+    section, cfg = tab.users_section, tab.config
+    mia = users.all_users(cfg)[1]
+    assert "steam" not in section.rows[mia.id]  # no Steam account on the device: nothing to choose
+    section._steam_accounts = [SimpleNamespace(steam_id="111", persona="Papa"), SimpleNamespace(steam_id="222", persona="Mia")]
+    section.refresh()
+    combo = section.rows[mia.id]["steam"]
+    assert [combo.itemText(i) for i in range(combo.count())] == ["Steam: as it is", "Steam: Papa", "Steam: Mia"]
+    assert "steam" not in section.rows["admin"]  # the admin's own: Settings -> Games
+    combo.setCurrentIndex(2)
+    assert tab._saved[-1]["users"][0]["steam"]["account"] == "222"
+    assert section.rows[mia.id]["steam"].currentData() == "222"
+    users.enter(cfg, mia.id)
+    assert cfg["steam"]["account"] == "222"
+    users.leave(cfg)

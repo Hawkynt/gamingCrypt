@@ -272,6 +272,7 @@ class DisplaySection(Section):
         native = mode.panel_size() or (1280, 800)
         refresh = (self.gs_refresh.currentData() or 0) if self.gs_rates else 0
         self.config["system"]["gaming_refresh"] = refresh  # set again at every start (see app)
+        self.config["system"]["gaming_resolution"] = f"{w}x{h}"  # (each user their own: set at their login)
         self.save(self.config)
         if not self._needs_restart():
             if not self.gs_rates:

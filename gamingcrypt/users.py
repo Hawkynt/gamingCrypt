@@ -262,61 +262,120 @@ def has_code(config: dict, user_id: str) -> bool:
 # --- what's each user's own -------------------------------------------------------------------
 
 OWN_STEAM = ("api_key", "steam_id", "account", "country", "language")  # the rest is the device's
+# Settings a user has for themselves: section -> its keys (None: all of it). What's not here is
+# the device's, the same for everybody. A user starts with what the admin has (Steam: with nothing
+# of the admin's) and keeps what they change.
+OWN = {
+    "steam": OWN_STEAM,
+    "appearance": None,  # dark / light, text size
+    "overlay_bar": None,  # the performance overlay: where, how big, what's on it
+    "system": ("gaming_refresh", "follow_game_refresh", "gaming_resolution", "volume_step", "power_limit_w",
+               "display"),
+}
+STARTS_EMPTY = ("steam",)
+KEPT = "_admin"  # in memory, while a user is logged in: the admin's own sections
+
+
+def _own_keys(section: str, *dicts) -> list[str]:
+    keys = OWN[section]
+    if keys is not None:
+        return list(keys)
+    return list(dict.fromkeys(k for d in dicts if isinstance(d, dict) for k in d))
+
+
+def _for_user(config: dict, record: dict, section: str, admins) -> dict:
+    """The section as this user has it: the device's settings, with their own on top."""
+    own = record.get(section) if isinstance(record.get(section), dict) else {}
+    merged = copy.deepcopy(admins) if isinstance(admins, dict) else {}
+    for key in _own_keys(section, admins, own):
+        if key in own:
+            merged[key] = copy.deepcopy(own[key])
+        elif section in STARTS_EMPTY:
+            merged[key] = ""
+    return merged
+
+
+def _split(config: dict, section: str) -> tuple[dict, dict]:
+    """(the user's own part, the admin's section) of the section as it's in use right now."""
+    now = config.get(section) if isinstance(config.get(section), dict) else {}
+    admins = config[KEPT].get(section)
+    keys = _own_keys(section, admins, now)
+    own = {key: copy.deepcopy(now[key]) for key in keys if key in now}
+    device = copy.deepcopy(now)  # what isn't a user's own counts for everybody
+    for key in keys:
+        device.pop(key, None)
+        if isinstance(admins, dict) and key in admins:
+            device[key] = copy.deepcopy(admins[key])
+    return own, device
 
 
 def steam_settings(config: dict, user: User) -> dict:
     """The Steam settings to work with while this user is using the device."""
     if user.admin:
         return config["steam"]
-    record = _record(config, user.id)
-    own = record.setdefault("steam", {})
-    merged = copy.deepcopy(config["steam"])
-    for key in OWN_STEAM:
-        merged[key] = own.get(key, "")
-    return merged
+    return _for_user(config, _record(config, user.id), "steam", config["steam"])
 
 
 def persistable(config: dict) -> dict:
-    """What's written to config.json: without the session - and with the Steam settings where
-    they belong (the admin's as ever under "steam", a user's with the user)."""
-    out = {k: v for k, v in config.items() if k not in ("session", "_admin_steam")}
+    """What's written to config.json: without the session - and with every setting where it
+    belongs (the admin's as ever in its section, a user's own with the user)."""
+    out = {k: v for k, v in config.items() if k not in ("session", KEPT, "_admin_steam")}
     user = current(config)
-    if not user.admin and "_admin_steam" in config:
+    if not user.admin and KEPT in config:
         out = copy.deepcopy(out)
         record = next(u for u in out["users"] if isinstance(u, dict) and u.get("id") == user.id)
-        record["steam"] = {key: config["steam"].get(key, "") for key in OWN_STEAM}
-        device = copy.deepcopy(config["steam"])  # what isn't a user's own counts for everybody
-        for key in OWN_STEAM:
-            device[key] = config["_admin_steam"].get(key, "")
-        out["steam"] = device
+        for section in OWN:
+            own, device = _split(config, section)
+            record[section] = own
+            if device or section in config[KEPT]:
+                out[section] = device
+            else:
+                out.pop(section, None)
     return out
 
 
 def enter(config: dict, user_id: str | None) -> User:
-    """This user is using the device from now on: ``config["steam"]`` is theirs."""
+    """This user is using the device from now on: the settings that are a user's own are theirs."""
     leave(config)
     user = set_current(config, user_id)
     if not user.admin:
-        config["_admin_steam"] = config["steam"]
-        config["steam"] = steam_settings(config, user)
+        record = _record(config, user.id)
+        config[KEPT] = {section: config[section] for section in OWN if section in config}
+        for section in OWN:
+            config[section] = _for_user(config, record, section, config[KEPT].get(section))
     return user
 
 
 def leave(config: dict) -> None:
-    """Back to nobody (the lock screen): ``config["steam"]`` is the admin's again."""
+    """Back to nobody (the lock screen): every setting is the admin's again."""
     user = current(config)
-    if not user.admin and "_admin_steam" in config:
+    if not user.admin and KEPT in config:
         try:
             record = _record(config, user.id)
-            record["steam"] = {key: config["steam"].get(key, "") for key in OWN_STEAM}
         except UserError:
-            pass
-        device = config["steam"]
-        for key in OWN_STEAM:
-            device[key] = config["_admin_steam"].get(key, "")
-        config["steam"] = device
-    config.pop("_admin_steam", None)
+            record = None
+        for section in OWN:
+            own, device = _split(config, section)
+            if record is not None:
+                record[section] = own
+            if device or section in config[KEPT]:
+                config[section] = device
+            else:
+                config.pop(section, None)
+    config.pop(KEPT, None)
     config.pop("session", None)
+
+
+def set_steam_account(config: dict, user_id: str, steam_id: str) -> None:
+    """Which Steam account a user plays with (the admin chooses it for them: Settings -> Games isn't
+    there for users). "" = whichever is active."""
+    if user_id == ADMIN:
+        config["steam"]["account"] = steam_id
+        return
+    record = _record(config, user_id)
+    own = record.setdefault("steam", {})
+    own["account"] = steam_id
+    own["steam_id"] = ""  # (follows the account)
 
 
 def write_sidecar(config: dict) -> bool:

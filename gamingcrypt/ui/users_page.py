@@ -271,6 +271,18 @@ class UsersSection(QFrame):
                 age.currentIndexChanged.connect(lambda _i, u=user, c=age: self.set_age(u, c.currentData()))
                 line.addWidget(age)
                 widgets["age"] = age
+            if me.admin and not user.admin and self.steam_accounts():
+                # (Settings -> Games isn't there for users: the admin says which Steam account is theirs)
+                steam = QComboBox()
+                steam.addItem("Steam: as it is", "")
+                for account in self.steam_accounts():
+                    steam.addItem(f"Steam: {account.persona}", account.steam_id)
+                chosen = next((u.get("steam", {}).get("account", "") for u in self.config.get("users", [])
+                               if isinstance(u, dict) and u.get("id") == user.id), "")
+                steam.setCurrentIndex(max(0, steam.findData(chosen)))
+                steam.currentIndexChanged.connect(lambda _i, u=user, c=steam: self.set_steam(u, c))
+                line.addWidget(steam)
+                widgets["steam"] = steam
             if not user.admin:
                 code_button = big_button("New code")
                 code_button.clicked.connect(lambda _c=False, u=user: self.new_code(u))
@@ -322,6 +334,19 @@ class UsersSection(QFrame):
     def set_age(self, user, age) -> None:
         users.set_age(self.config, user.id, age)
         self._saved(f"{user.name}: games for {'any age' if age is None else f'age {age}'}")
+
+    def steam_accounts(self) -> list:
+        """The Steam accounts that logged in on this device."""
+        if not hasattr(self, "_steam_accounts"):
+            try:
+                self._steam_accounts = list(self.tab.steam.accounts())
+            except Exception:  # noqa: BLE001 - no Steam: nothing to choose
+                self._steam_accounts = []
+        return self._steam_accounts
+
+    def set_steam(self, user, combo) -> None:
+        users.set_steam_account(self.config, user.id, combo.currentData() or "")
+        self._saved(f"{user.name}: {combo.currentText()} - from their next login")
 
     def set_locked(self, user, tab: str, locked: bool) -> None:
         users.set_locked(self.config, user.id, tab, locked)

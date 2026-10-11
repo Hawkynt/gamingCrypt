@@ -508,10 +508,66 @@ class MainWindow(QMainWindow):
         from gamingcrypt import game_profiles
 
         self.game_profiles = game_profiles.for_user(user)  # per-game settings: their own
+        self.apply_own_settings(login=True)
         if self.config.get("last_user") != user.id and len(users.all_users(self.config)) > 1:
             self.config["last_user"] = user.id  # chosen on the lock screen the next time
             self.save(self.config)
         self.remember_code(secret)
+
+    def apply_own_settings(self, login: bool = False) -> None:
+        """With more users, each has settings of their own (users.OWN): the look, the performance
+        overlay, the screen's refresh rate and resolution, the power limit. They're put in place
+        when somebody logs in - and the admin's again at the lock screen. One user: nothing to do."""
+        from PySide6.QtWidgets import QApplication
+
+        from gamingcrypt import users
+        from gamingcrypt.session import mode
+
+        if len(users.all_users(self.config)) < 2:
+            return
+        look, size = theme.from_config(self.config), theme.size_from_config(self.config)
+        if (look, size) != (theme.current, theme.text_size):
+            theme.apply(look, QApplication.instance(), size)
+        if not mode.in_gaming_session() or not login:
+            return
+        from gamingcrypt.system import gamescope_ctl, overlay_bar
+
+        bar = overlay_bar.mangohud_config(overlay_bar.settings_of(self.config))
+        hz = self.default_refresh()
+        rates = self.refresh_rates()
+
+        def work() -> None:
+            gamescope_ctl.set_bar(bar)
+            if rates:
+                gamescope_ctl.set_dynamic_refresh(hz)
+
+        run_async(work, owner=self, pool=self._power_pool)
+        self.apply_power_profile()
+        if self.own_resolution_differs():
+            QTimer.singleShot(0, self.restart_gaming_mode)  # (after the shell is up: it resumes as this user)
+
+    def own_resolution_differs(self) -> bool:
+        """The resolution is one of gamescope's options: another one than the last user's means
+        gaming mode starts again (a few seconds). True: the options are written, restart now."""
+        from gamingcrypt import users
+        from gamingcrypt.session import mode
+
+        native = mode.panel_size() or (1280, 800)
+        current = mode.parse_display(mode.read_args())
+        now = f"{current.get('width', native[0])}x{current.get('height', native[1])}"
+        wanted = self.config["system"].get("gaming_resolution")
+        kept = self.config.get(users.KEPT, {}).get("system")
+        if isinstance(kept, dict) and not kept.get("gaming_resolution"):
+            kept["gaming_resolution"] = now  # what the admin has: theirs again at their next login
+            self.save(self.config)
+        sizes = {f"{w}x{h}": (w, h) for w, h in mode.render_sizes(native)}
+        if not wanted or wanted == now or wanted not in sizes or mode.display_pending():
+            return False
+        w, h = sizes[wanted]
+        mode.apply_display(*((None, None) if (w, h) == native else (w, h)), None)
+        mode.confirm_display()  # one of the sizes Settings offers: nothing to ask
+        log.info("gaming mode restarts at %s for who logged in", wanted)
+        return True
 
     def use_own_steam_account(self, service) -> None:
         """More users, each with a Steam account of their own (chosen in Settings -> Games): Steam
@@ -1708,6 +1764,7 @@ class MainWindow(QMainWindow):
         from gamingcrypt import users
 
         users.leave(self.config)  # locked: nobody's logged in
+        self.apply_own_settings()  # (the lock screen looks as the admin has it)
         everyone = users.all_users(self.config)
         lock = LockScreen(self.unlocker_factory(self.config["unlock"]), self.config["unlock"]["method"],
                           users=everyone, user_id=self.config.get("last_user"),
