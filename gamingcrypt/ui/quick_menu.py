@@ -46,6 +46,7 @@ class QuickMenu(QWidget):
     controls_requested = Signal()  # emulated game: its button layout
     bluetooth_requested = Signal()  # pair / connect a controller or headphones, the game keeps running
     speed_chosen = Signal(float)  # emulated game: 0.1 - 10 times as fast
+    in_step_chosen = Signal(bool)  # emulated 50 Hz game: at the screen's 60 FPS (a fifth faster)
     disc_chosen = Signal(int)  # emulated game on several discs: change to this one (0-based)
 
     def __init__(self, parent: QWidget, system: SystemControls,
@@ -189,7 +190,11 @@ class QuickMenu(QWidget):
         row.setObjectName("menuRow")
         line = QHBoxLayout(row)
         line.setContentsMargins(0, 0, 0, 0)
-        line.addWidget(self.controls_button)
+        line.addWidget(self.controls_button, 1)
+        self.in_step_button = big_button("", checkable=True)
+        self.in_step_button.toggled.connect(self._in_step_toggled)
+        self.in_step_button.hide()
+        line.addWidget(self.in_step_button, 1)
         self.box.addWidget(row)
         self.controls_row = row
         row.hide()
@@ -249,7 +254,7 @@ class QuickMenu(QWidget):
         left = [[self.output], [self.input], [self.volume], [self.brightness], [self.refresh],
                 [self.keep_button, self.revert_button], [self.power], [self.fps], [self.bluetooth_button]]
         right = [[self.back_button], [self.overlay_button, self.screenshot_button],
-                 [self.save_state_button, self.load_state_button], [self.controls_button],
+                 [self.save_state_button, self.load_state_button], [self.controls_button, self.in_step_button],
                  [self.speed], [self.disc_prev, self.disc_next], [self.quit_button],
                  [self.lock_button]]
         return [r for r in map(usable, left) if r], [r for r in map(usable, right) if r]
@@ -333,6 +338,21 @@ class QuickMenu(QWidget):
         if speed is not None:
             self.show_speed(speed)
 
+    def set_in_step(self, offered: bool, on: bool = False) -> None:
+        """A 50 Hz game: the box to run it at the screen's 60 FPS - not offered for other games."""
+        self.in_step_button.blockSignals(True)
+        self.in_step_button.setChecked(on)
+        self.in_step_button.blockSignals(False)
+        self._in_step_text()
+        self.in_step_button.setVisible(offered)
+
+    def _in_step_text(self) -> None:
+        self.in_step_button.setText(("☑" if self.in_step_button.isChecked() else "☐") + "  60 FPS (50 Hz game)")
+
+    def _in_step_toggled(self, on: bool) -> None:
+        self._in_step_text()
+        self.in_step_chosen.emit(on)  # the menu stays open
+
     def show_speed(self, speed: float) -> None:
         """The speed the game runs at - nothing is applied."""
         from gamingcrypt.emulation.retroarch import SPEEDS
@@ -344,6 +364,7 @@ class QuickMenu(QWidget):
     def set_speed_busy(self, busy: bool, text: str = "") -> None:
         """While the game comes back at a new speed: no other one yet."""
         self.speed.setEnabled(not busy)
+        self.in_step_button.setEnabled(not busy)
         set_status(self.status, text)
 
     def set_discs(self, count: int, current: int = 0) -> None:

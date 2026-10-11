@@ -134,6 +134,17 @@ def speed_settings(fast: float = DEFAULT_FAST, slow: float = DEFAULT_SLOW) -> di
     return {"fastforward_ratio": f"{fast:g}", "slowmotion_ratio": f"{1 / slow:g}"}
 
 
+# A 50 Hz (PAL) game on a 60 Hz screen shows every fifth frame twice: it stutters. In step with the
+# screen instead it runs at 60 FPS - a fifth faster, the sound a little higher. RetroArch does that
+# by itself only for small differences between the game's rate and the screen's; this allows the 20 %.
+IN_STEP_WITH_SCREEN = {"audio_max_timing_skew": "0.25", "vrr_runloop_enable": "false", "video_vsync": "true",
+                       "audio_sync": "true"}
+
+
+def is_50_hz(fps: float | None) -> bool:
+    return fps is not None and abs(fps - 50) < 0.5
+
+
 def mode_of(speed: float) -> str:
     return "slow" if speed < 1 else "fast" if speed > 1 else "normal"
 
@@ -314,7 +325,8 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
            slow: float = DEFAULT_SLOW, memory_card: str | None = None,
            widescreen: str | None = None, input_lag: str | None = None,
            renderer: str | None = None, resolution: str | None = None,
-           shaders: list[str] | None = None, shader_dirs=None, scaler: str | None = None) -> tuple[bool, str]:
+           shaders: list[str] | None = None, shader_dirs=None, scaler: str | None = None,
+           in_step: bool = False) -> tuple[bool, str]:
     if not available(which):
         return False, "RetroArch isn't installed - run ./install.sh"
     core = find_core(paths, game.system, core_name)
@@ -323,6 +335,8 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
         return False, (f"No RetroArch core for {game.system.name} yet - add e.g. {wanted}_libretro.so "
                        "to the cores folder (⬆ Add emulator games)")
     extra = {**speed_settings(fast, slow), **lag_settings(game.system.id, input_lag)}
+    if in_step:  # a 50 Hz game at the screen's 60
+        extra.update(IN_STEP_WITH_SCREEN)
     short = core.name.removesuffix(".so").removesuffix("_libretro")
     video = RENDERER_VIDEO.get(renderer or "") if short in RENDERERS else None
     if video or game.system.video:
@@ -383,7 +397,7 @@ def content_fps(log: Path) -> float | None:
 
 def refresh_for(fps: float | None) -> int:
     """The screen refresh that shows the game evenly: 50 Hz for 50 fps games, else the default (0)."""
-    return 50 if fps is not None and abs(fps - 50) < 0.5 else 0
+    return 50 if is_50_hz(fps) else 0
 
 
 def playing(port: int = COMMAND_PORT, timeout: float = 0.3) -> bool:

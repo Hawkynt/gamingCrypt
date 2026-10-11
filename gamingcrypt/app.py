@@ -594,6 +594,7 @@ class MainWindow(QMainWindow):
             menu.controls_requested.connect(self.open_running_controls)
             menu.bluetooth_requested.connect(self.open_bluetooth)
             menu.speed_chosen.connect(self.set_speed)
+            menu.in_step_chosen.connect(self.set_in_step)
             menu.disc_chosen.connect(self.set_disc)
         watcher = self.game_watcher
         appid = watcher.appid if watcher.active and watcher.phase in ("starting", "playing") else None
@@ -605,6 +606,8 @@ class MainWindow(QMainWindow):
         rom = self.running_rom() if appid is not None and appid >= EMU_APPID_BASE else None
         retroarch_game = rom is not None and rom.system.emulator == "retroarch"
         menu.set_emulated(retroarch_game, getattr(self, "speed", 1.0) if retroarch_game else None)
+        in_step = bool(retroarch_game and self.game_profiles.get(rom.appid).get("in_step"))
+        menu.set_in_step(bool(retroarch_game) and (in_step or self.running_at_50_hz()), in_step)
         menu.set_speed_busy(getattr(self, "_speed_changing", False))
         menu.set_discs(len(rom.discs) if retroarch_game else 0, getattr(self, "disc_index", 0))
         menu.open_menu(appid, self.game_name(appid) if appid else "")
@@ -883,7 +886,7 @@ class MainWindow(QMainWindow):
                                        input_lag=profile.get("input_lag"), renderer=profile.get("renderer"),
                                        resolution=resolution,
                                        shaders=shader_choice.for_game(self.config, profile, game.system.id),
-                                       scaler=scaler)
+                                       scaler=scaler, in_step=bool(profile.get("in_step")))
         if ok:
             self.follow_game_refresh(config_mod.cache_dir() / "logs" / retroarch.LOG_NAME)
             self.speed_mode, self.speed = "normal", 1.0  # RetroArch starts at normal speed
@@ -1142,7 +1145,25 @@ class MainWindow(QMainWindow):
             return
         self.restart_at_speed(rom, speed)
 
-    def restart_at_speed(self, rom, speed: float) -> None:
+    def running_at_50_hz(self) -> bool:
+        """The running emulated game is a 50 Hz (PAL) one - RetroArch's log says so."""
+        from gamingcrypt.emulation import retroarch
+
+        return retroarch.is_50_hz(retroarch.content_fps(config_mod.cache_dir() / "logs" / retroarch.LOG_NAME))
+
+    def set_in_step(self, on: bool) -> None:
+        """Quick menu: a 50 Hz game at the screen's 60 FPS (a fifth faster) - or as it was made.
+        One of RetroArch's settings, read at its start: the game is saved, started again, put back."""
+        rom = self.running_rom()
+        if rom is None or getattr(self, "_speed_changing", False):
+            return
+        self.game_profiles.set(rom.appid, "in_step", True if on else None)
+        self.restart_at_speed(rom, getattr(self, "speed", 1.0),
+                              text="Changing to 60 FPS…" if on else "Changing back to 50 FPS…",
+                              unsaved=("60 FPS" if on else "50 FPS") + " from the next start - this game can't be "
+                                                                         "saved while it runs")
+
+    def restart_at_speed(self, rom, speed: float, text: str = "", unsaved: str = "") -> None:
         import time
 
         from gamingcrypt.emulation import retroarch, savestates
@@ -1170,7 +1191,8 @@ class MainWindow(QMainWindow):
         def stopped(saved: bool) -> None:
             if not saved:  # a core without save states: nothing to come back to
                 busy(False)
-                self.notify(f"{speed:g}x from the next start - this game can't be saved while it runs", "⏩")
+                self.notify(unsaved or f"{speed:g}x from the next start - this game can't be saved while it runs",
+                            "⏩")
                 return
             if getattr(self.running_rom(), "appid", None) != appid:
                 busy(False)
@@ -1201,10 +1223,10 @@ class MainWindow(QMainWindow):
             busy(False)
             if not ok:
                 slot = savestates.rescue(paths, rom)
-                self.notify("The game didn't come back at the new speed" + (
+                self.notify("The game didn't come back by itself" + (
                     f" - where you were is in slot {slot + 1} of Load state" if slot is not None else ""), "⚠")
 
-        busy(True, f"Changing the speed to {speed:g}x…")
+        busy(True, text or f"Changing the speed to {speed:g}x…")
         run_async(save_and_stop, stopped, lambda _e: stopped(False), owner=self)
 
     def launch_switch(self, game, paths, games) -> tuple[bool | None, str]:

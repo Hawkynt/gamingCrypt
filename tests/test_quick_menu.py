@@ -443,3 +443,32 @@ def test_state_and_bluetooth_buttons_ask_for_their_pages(menu):
     m.set_emulated(False)
     m.open_menu(620, "Portal 2")
     assert m.bluetooth_button.isVisibleTo(m) and not m.save_state_button.isVisibleTo(m)  # any game, and none
+
+
+def test_the_60_fps_box(qtbot, menu):
+    """Next to Controls, for 50 Hz games: ticking it tells the app, the menu stays open."""
+    m, *_ = menu
+    m.set_emulated(True, 1.0)
+    m.set_in_step(False)
+    m.open_menu(0x70000001, "Mario")
+    assert not m.in_step_button.isVisibleTo(m)
+    m.set_in_step(True, False)
+    m._test_host.grab()
+    assert m.in_step_button.isVisibleTo(m) and not m.in_step_button.isChecked()
+    y = lambda w: w.mapTo(m, w.rect().topLeft()).y()  # noqa: E731
+    assert y(m.in_step_button) == y(m.controls_button)
+    panel = m.panel.viewport().rect()
+    for button in (m.controls_button, m.in_step_button):
+        r = button.rect().translated(button.mapTo(m.panel.viewport(), button.rect().topLeft()))
+        assert panel.contains(r) and button.width() >= button.sizeHint().width(), button.text()  # not cut
+    chosen = []
+    m.in_step_chosen.connect(chosen.append)
+    m.in_step_button.click()
+    assert chosen == [True] and m.isVisible() and m.in_step_button.text().startswith("☑")
+    m.set_in_step(True, False)  # shown as it is, nothing asked
+    assert chosen == [True] and m.in_step_button.text().startswith("☐")
+    m.set_speed_busy(True, "Changing to 60 FPS…")
+    assert not m.in_step_button.isEnabled()
+    m.set_speed_busy(False)
+    assert m.in_step_button.isEnabled()
+    assert m._rows()[1][3] == [m.controls_button, m.in_step_button]  # the controller reaches it

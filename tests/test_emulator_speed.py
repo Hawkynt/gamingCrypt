@@ -53,7 +53,8 @@ def window(qtbot, tmp_path, monkeypatch):
     paths.ensure()
     (paths.roms / "snes" / "Super Mario World.sfc").write_text("x")
     launches, sent = [], []
-    monkeypatch.setattr(retroarch, "launch", lambda game, *a, **k: launches.append(
+    in_step = []
+    monkeypatch.setattr(retroarch, "launch", lambda game, *a, **k: in_step.append(k.get("in_step")) or launches.append(
         (game.name, k.get("fast"), k.get("slow"))) or (True, "Starting"))
     monkeypatch.setattr(retroarch, "send", lambda text, port=None: sent.append(text) or True)
     pages = {}
@@ -70,6 +71,7 @@ def window(qtbot, tmp_path, monkeypatch):
     games = pages["Games"]
     qtbot.waitUntil(lambda: "snes" in games.home.system_cards)
     w._launches, w._sent, w._game, w._paths = launches, sent, scan(paths, BY_ID["snes"])[0], paths
+    w._in_step = in_step
     return w
 
 
@@ -197,3 +199,100 @@ def test_no_speeds_to_choose_on_the_game_page(qtbot, window):
     page = RomGamePage(window.shell.pages["Games"], window._game)
     qtbot.addWidget(page)
     assert not hasattr(page, "speed_combos")  # the quick menu's slider is all there is
+
+
+# --- a 50 Hz game at the screen's 60 FPS -----------------------------------------------------------
+
+PAL_LOG = "[INFO] [Core] Geometry: 256x239, Aspect: 1.333, FPS: 50.01, Sample rate: 32040.00 Hz.\n"
+NTSC_LOG = "[INFO] [Core] Geometry: 256x224, Aspect: 1.333, FPS: 60.10, Sample rate: 32040.00 Hz.\n"
+
+
+def game_log(text):
+    from gamingcrypt import config as config_mod
+
+    log = config_mod.cache_dir() / "logs" / retroarch.LOG_NAME
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text(text)
+
+
+def test_in_step_with_the_screen_is_a_retroarch_setting(tmp_path):
+    """RetroArch runs a game in step with the screen by itself only when their rates are close:
+    for 50 on 60 the allowed difference is raised."""
+    paths = EmulationPaths(tmp_path / "Emulation")
+    paths.ensure()
+    (paths.cores / "snes9x_libretro.so").write_text("x")
+    (paths.roms / "snes" / "Mario.sfc").write_text("x")
+    game = scan(paths, BY_ID["snes"])[0]
+    start = lambda **k: retroarch.launch(game, paths, tmp_path / "d", tmp_path / "l", popen=lambda cmd, **kw: None,  # noqa: E731
+                                         which=lambda n: "/usr/bin/retroarch", **k)
+    assert start()[0] and "audio_max_timing_skew" not in (paths.config / "gamingcrypt.cfg").read_text()
+    assert start(in_step=True)[0]
+    config = (paths.config / "gamingcrypt.cfg").read_text()
+    assert 'audio_max_timing_skew = "0.25"' in config and 'vrr_runloop_enable = "false"' in config
+    assert 'video_vsync = "true"' in config and 'audio_sync = "true"' in config
+    assert retroarch.is_50_hz(50.01) and retroarch.is_50_hz(49.7) and not retroarch.is_50_hz(59.94)
+    assert not retroarch.is_50_hz(None)
+
+
+def test_the_box_is_offered_for_50_hz_games_only(qtbot, window):
+    game_log(NTSC_LOG)
+    menu = playing(window)
+    assert not menu.in_step_button.isVisibleTo(menu)
+    menu.close_menu()
+    game_log(NTSC_LOG + PAL_LOG)  # what the game asked for last
+    window.toggle_quick_menu()
+    assert menu.in_step_button.isVisibleTo(menu) and not menu.in_step_button.isChecked()
+    assert menu.in_step_button.text() == "☐  60 FPS (50 Hz game)"
+    assert window._in_step == [False]
+
+
+def test_ticking_it_starts_the_game_again_at_60_fps(qtbot, window, monkeypatch):
+    stopped = fake_retroarch(window, monkeypatch)
+    game_log(PAL_LOG)
+    menu = playing(window)
+    game = window._game
+    menu.in_step_button.click()
+    assert menu.isVisible() and "60 FPS" in menu.status.text() and not menu.in_step_button.isEnabled()
+    qtbot.waitUntil(lambda: menu.in_step_button.isEnabled() and len(window._launches) == 2, timeout=8000)
+    assert stopped == [game.appid] and window._in_step == [False, True]  # saved, started again in step
+    assert window._sent == ["SAVE_STATE", "LOAD_STATE_SLOT 99"]  # and put back where it was, at normal speed
+    assert window.game_profiles.get(game.appid).get("in_step") is True
+    assert menu.in_step_button.text().startswith("☑") and menu.status.text() == "" and window.speed == 1.0
+    menu.close_menu()
+    window.toggle_quick_menu()
+    assert menu.in_step_button.isChecked()  # kept for this game
+    menu.in_step_button.click()  # and back
+    qtbot.waitUntil(lambda: len(window._launches) == 3 and menu.in_step_button.isEnabled(), timeout=8000)
+    assert window._in_step[-1] is False and "in_step" not in window.game_profiles.get(game.appid)
+    window.game_over(game.appid)
+    window.game_watcher._stop()
+
+
+def test_a_ticked_game_starts_in_step_and_keeps_its_box(qtbot, window):
+    """Also when RetroArch's log doesn't say 50 Hz (yet): what's ticked can be unticked."""
+    window.game_profiles.set(window._game.appid, "in_step", True)
+    game_log("")
+    menu = playing(window)
+    assert window._in_step == [True] and menu.in_step_button.isVisibleTo(menu) and menu.in_step_button.isChecked()
+
+
+def test_a_fast_game_stays_fast_when_ticked(qtbot, window, monkeypatch):
+    fake_retroarch(window, monkeypatch)
+    game_log(PAL_LOG)
+    menu = playing(window)
+    window.set_speed(2.0)  # the rate it was started with: instant
+    window._sent.clear()
+    menu.in_step_button.click()
+    qtbot.waitUntil(lambda: len(window._launches) == 2 and menu.in_step_button.isEnabled(), timeout=8000)
+    assert window._sent == ["SAVE_STATE", "LOAD_STATE_SLOT 99", "FAST_FORWARD"] and window.speed == 2.0
+
+
+def test_a_game_that_cannot_be_saved_gets_it_from_the_next_start(qtbot, window, monkeypatch):
+    stopped = fake_retroarch(window, monkeypatch, saves=False)
+    monkeypatch.setattr("gamingcrypt.emulation.savestates.capture", lambda *a, **k: False)
+    game_log(PAL_LOG)
+    menu = playing(window)
+    menu.in_step_button.click()
+    qtbot.waitUntil(lambda: any("60 FPS from the next start" in t for t in toasts(window)), timeout=8000)
+    assert stopped == [] and len(window._launches) == 1
+    assert window.game_profiles.get(window._game.appid).get("in_step") is True
