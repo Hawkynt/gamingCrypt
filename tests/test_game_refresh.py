@@ -137,8 +137,13 @@ print(panel.dynamic_modegen({{ clock = 1 }}, 50).vrefresh)
 
 
 def test_install_script_copies_the_profile(tmp_path):
+    """Into ~/.config/gamescope/scripts: right in ~/.config/gamescope gamescope never read it - the
+    panel had no other refresh rates, so the screen never followed a 50 Hz game."""
+    (tmp_path / "gamescope").mkdir()
+    (tmp_path / "gamescope" / "gamingcrypt-displays.lua").write_text("-- where it was before")
     function = subprocess.run(["sed", "-n", "/^install_gamescope_displays()/,/^}/p", str(ROOT / "install.sh")],
                               capture_output=True, text=True).stdout
     subprocess.run(["bash", "-c", f'set -euo pipefail\n{function}\nSRC_DIR="{ROOT}" XDG_CONFIG_HOME="{tmp_path}" '
                     "install_gamescope_displays"], check=True)
-    assert (tmp_path / "gamescope" / "gamingcrypt-displays.lua").read_text() == LUA.read_text()
+    assert (tmp_path / "gamescope" / "scripts" / "gamingcrypt-displays.lua").read_text() == LUA.read_text()
+    assert not (tmp_path / "gamescope" / "gamingcrypt-displays.lua").exists()

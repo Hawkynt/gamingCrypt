@@ -1,6 +1,6 @@
 -- GamingCrypt: refresh rates for handheld panels gamescope has no profile for, so the
 -- screen can follow a game's frame rate (a 50 Hz PAL game on a 60 Hz screen stutters:
--- every fifth frame is shown twice). Copied to ~/.config/gamescope by install.sh.
+-- every fifth frame is shown twice). Copied to ~/.config/gamescope/scripts by install.sh.
 
 local function rates(low, high)
     local list = {}

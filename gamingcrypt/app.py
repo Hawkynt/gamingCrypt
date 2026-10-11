@@ -1986,8 +1986,13 @@ def reset_upscaling_in_gaming_mode(window) -> None:
         screen = window.screen_size()
         run_async(lambda: upscaling.stop(screen), owner=window, pool=window._power_pool)
     if in_gaming_session():  # the refresh rate from Settings: gamescope starts at the panel's own
+        from gamingcrypt.session import mode
         from gamingcrypt.system import gamescope_ctl
 
+        old = mode.take_out_refresh()  # once: it was one of gamescope's options
+        if old and not window.default_refresh():
+            window.config["system"]["gaming_refresh"] = old
+            window.save(window.config)
         hz = window.default_refresh()
         run_async(lambda: gamescope_ctl.set_dynamic_refresh(hz), owner=window, pool=window._power_pool)
 

@@ -197,6 +197,21 @@ def apply_display(width: int | None, height: int | None, refresh: int | None,
     return new
 
 
+def take_out_refresh(env: dict | None = None) -> int | None:
+    """A refresh rate among gamescope's own options ("-r 50", from Settings before 1.0.3) is taken
+    out - from gamescope's next start on; returns it. On a 60 Hz panel that option didn't change
+    the screen: gamescope only handed games every second frame (30 FPS, and emulators ran slow).
+    The rate is set while gamescope runs instead (gamescope_ctl.set_dynamic_refresh)."""
+    current = args_file(env)
+    if not current.exists() or pending_file(env).exists():
+        return None  # a change waiting for "keep?": not now
+    found = parse_display(read_args(env))
+    if "refresh" not in found:
+        return None
+    _write(current, with_display(read_args(env), found.get("width"), found.get("height"), None) + "\n")
+    return found["refresh"]
+
+
 def display_pending(env: dict | None = None, now: Callable[[], float] = time.time) -> bool:
     try:
         started = float(pending_file(env).read_text())

@@ -473,9 +473,11 @@ ENTRY
 
 install_gamescope_displays() {
     # refresh rates for panels gamescope has no profile for (games at 50 Hz); read when gaming mode starts
+    # gamescope reads ~/.config/gamescope/scripts (older ones ~/.config/gamescope): in "scripts" both find it
     local dir="${XDG_CONFIG_HOME:-$HOME/.config}/gamescope"
-    mkdir -p "$dir"
-    cp "$SRC_DIR/gamingcrypt/session/gamescope/gamingcrypt-displays.lua" "$dir/"
+    mkdir -p "$dir/scripts"
+    rm -f "$dir/gamingcrypt-displays.lua"  # where it was before: gamescope never read it there
+    cp "$SRC_DIR/gamingcrypt/session/gamescope/gamingcrypt-displays.lua" "$dir/scripts/"
 }
 install_gamescope_displays
 

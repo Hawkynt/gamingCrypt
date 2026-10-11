@@ -292,6 +292,17 @@ def test_a_refresh_rate_among_gamescopes_options_is_taken_out(qtbot, monkeypatch
     assert tab.config["system"]["gaming_refresh"] == 50
 
 
+def test_refresh_rate_is_taken_out_of_gamescopes_options(tmp_path, monkeypatch):
+    """"-r 50" on a 60 Hz panel: games got every second frame (30 FPS). It moves to Settings' own value."""
+    assert mode.take_out_refresh() is None  # no own options
+    mode.apply_display(960, 600, 50)
+    assert mode.take_out_refresh() is None  # still waiting for "keep this mode?"
+    mode.confirm_display()
+    assert mode.take_out_refresh() == 50
+    assert mode.parse_display(mode.read_args()) == {"width": 960, "height": 600}
+    assert "--generate-drm-mode" not in mode.read_args() and mode.take_out_refresh() is None
+
+
 def test_start_in_gaming_mode_sets_the_refresh_rate_from_settings(qtbot, monkeypatch):
     from gamingcrypt import app as app_mod
     from gamingcrypt.config import DEFAULTS
@@ -303,12 +314,13 @@ def test_start_in_gaming_mode_sets_the_refresh_rate_from_settings(qtbot, monkeyp
     monkeypatch.setattr(gamescope_ctl, "set_window_appid", lambda *a, **k: True)
     rates, saved = [], []
     monkeypatch.setattr(gamescope_ctl, "set_dynamic_refresh", lambda hz, runner=None: rates.append(hz) or True)
-    config = copy.deepcopy(DEFAULTS)
-    config["system"]["gaming_refresh"] = 50
-    window = app_mod.MainWindow(config, saved.append)
+    mode.apply_display(None, None, 50)  # from an older version
+    mode.confirm_display()
+    window = app_mod.MainWindow(copy.deepcopy(DEFAULTS), saved.append)
     qtbot.addWidget(window)
     app_mod.reset_upscaling_in_gaming_mode(window)
     qtbot.waitUntil(lambda: rates == [50])
+    assert saved[-1]["system"]["gaming_refresh"] == 50 and "refresh" not in mode.parse_display(mode.read_args())
     assert window.default_refresh() == 50
     monkeypatch.setattr(gamescope_ctl, "dynamic_refresh", lambda runner=None: 50)
     assert window.menu_refresh() == 0  # the quick menu: "Default" is what Settings says
