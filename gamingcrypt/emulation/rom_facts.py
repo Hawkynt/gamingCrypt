@@ -1,4 +1,4 @@
-"""Genre and release year of emulated games, from libretro-database (no account needed).
+"""Genre, release year and age rating of emulated games, from libretro-database (no account needed).
 
 Its metadat/genre and metadat/releaseyear lists name every game of a system as No-Intro does
 ("Super Mario World (USA)") - matched to the files like the covers are (emulation/covers).
@@ -21,6 +21,7 @@ from gamingcrypt.emulation.library import EmulationPaths, RomGame
 
 BASE = "https://raw.githubusercontent.com/libretro/libretro-database/master/metadat"
 FIELDS = ("genre", "releaseyear")
+RATINGS = "esrb"  # metadat/esrb: 'esrb_rating "E10+"' - for the age filter (gamingcrypt/ratings.py)
 KEEP_DAYS = 30
 GAME = re.compile(r'game \(\s*comment "((?:[^"\\]|\\.)*)"\s*(\w+) "([^"]*)"')
 
@@ -44,6 +45,7 @@ class RomFacts:
         self.now = now
         self._tables: dict[str, dict] = {}
         self._found: dict[tuple[str, str], tuple] = {}  # (system, file) -> facts: matched once
+        self._rated: dict[tuple[str, str], str | None] = {}
 
     def path(self, system_id: str) -> Path:
         return self.folder / f"{system_id}.json"
@@ -63,7 +65,8 @@ class RomFacts:
         if system_id not in PLAYLISTS:
             return False
         table = self.table(system_id)
-        return table is None or self.now() - table.get("fetched", 0) > KEEP_DAYS * 86400
+        return (table is None or RATINGS not in table  # (kept from before the ratings were fetched)
+                or self.now() - table.get("fetched", 0) > KEEP_DAYS * 86400)
 
     def fetch(self, system_id: str) -> bool:
         """Download the system's lists; False: offline (try later)."""
@@ -73,7 +76,7 @@ class RomFacts:
         if playlist is None:
             return True
         table = {"fetched": self.now()}
-        for field in FIELDS:
+        for field, key in (*((f, f) for f in FIELDS), (RATINGS, "esrb_rating")):
             try:
                 response = self.get(f"{BASE}/{field}/{quote(playlist)}.dat")
             except requests.RequestException:
@@ -83,18 +86,42 @@ class RomFacts:
             elif response.status_code != 200:
                 return False
             else:
-                table[field] = parse_dat(response.content.decode(errors="replace"), field)
+                table[field] = parse_dat(response.content.decode(errors="replace"), key)
         self.folder.mkdir(parents=True, exist_ok=True)
         part = self.path(system_id).with_suffix(".part")
         part.write_text(json.dumps(table))
         part.replace(self.path(system_id))
         self._tables[system_id] = table
         self._found = {k: v for k, v in self._found.items() if k[0] != system_id}
+        self._rated = {k: v for k, v in self._rated.items() if k[0] != system_id}
         return True
 
     def forget(self, game: RomGame) -> None:
         """Another game was chosen for the file: matched anew."""
         self._found.pop((game.system.id, game.path.name), None)
+        self._rated.pop((game.system.id, game.path.name), None)
+
+    def _find(self, game: RomGame, names: dict) -> str | None:
+        """The game's entry in one of the lists: by its exact name, else matched like the covers."""
+        from gamingcrypt.emulation.covers import best_match
+
+        chosen = self.names.get(game) if self.names is not None else None
+        stem = chosen or game.path.stem
+        if stem in names:
+            return names[stem]
+        # (a chosen name with other tags than the list's: "(USA)" for "(USA, Europe)")
+        match = best_match(f"{chosen}.rom" if chosen else game.path.name, list(names))
+        return names.get(match) if match else None
+
+    def rating(self, game: RomGame) -> str | None:
+        """Its ESRB rating ("E", "T", "M" …) - None: the list doesn't know the game (no network)."""
+        key = (game.system.id, game.path.name)
+        if key not in self._rated:
+            table = self.table(game.system.id)
+            if not table:
+                return None
+            self._rated[key] = self._find(game, table.get(RATINGS) or {})
+        return self._rated[key]
 
     def facts(self, game: RomGame) -> tuple[tuple[str, ...], int | None]:
         """(genres, release year) of the game - what the lists know (no network)."""
@@ -107,17 +134,7 @@ class RomFacts:
         if not table:
             return (), None
         genres, years = table.get("genre") or {}, table.get("releaseyear") or {}
-        chosen = self.names.get(game) if self.names is not None else None
-        stem = chosen or game.path.stem
-
-        def find(names: dict) -> str | None:
-            if stem in names:
-                return names[stem]
-            # (a chosen name with other tags than the list's: "(USA)" for "(USA, Europe)")
-            match = best_match(f"{chosen}.rom" if chosen else game.path.name, list(names))
-            return names.get(match) if match else None
-
-        genre, year = find(genres), find(years)
+        genre, year = self._find(game, genres), self._find(game, years)
         try:
             year_number = int(year[:4]) if year else None
         except ValueError:

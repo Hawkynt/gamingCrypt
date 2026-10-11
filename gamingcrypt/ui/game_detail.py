@@ -101,6 +101,11 @@ class GameDetailPage(QWidget):
 
         self.picture_button = picture_button(lambda: tab.open_cover_picker(self.game))
         options.addWidget(picture_row(self.picture_button))
+        from gamingcrypt.ui.rating_row import rating_row
+
+        self.rating_row = rating_row(tab, game)  # the admin's rating, where users have an age
+        if self.rating_row is not None:
+            options.addWidget(self.rating_row)
         self.uninstall_button = big_button("🗑 Uninstall", "danger")
         self.uninstall_button.clicked.connect(self.uninstall_tapped)
         options.addWidget(self.uninstall_button, alignment=Qt.AlignmentFlag.AlignLeft)

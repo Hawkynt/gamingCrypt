@@ -24,6 +24,7 @@ class SteamGame:
     # Disk space the store asks for (system requirements) - for games that aren't installed
     store_size: int | None = None
     genres: list[str] = field(default_factory=list)  # from the store ("Racing", "Action" …)
+    age: int | None = None  # rated for (0, 6, 12, 16, 18); None: unknown
 
     @property
     def playtime_hours(self) -> float:

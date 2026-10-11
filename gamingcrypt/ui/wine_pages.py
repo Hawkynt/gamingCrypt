@@ -300,6 +300,11 @@ class WindowsGamePage(QWidget):
 
         self.picture_button = picture_button(lambda: tab.open_cover_picker(self.game))
         options.addWidget(picture_row(self.picture_button))
+        from gamingcrypt.ui.rating_row import rating_row
+
+        self.rating_row = rating_row(tab, self.game)  # the admin's rating, where users have an age
+        if self.rating_row is not None:
+            options.addWidget(self.rating_row)
         self.remove_button = big_button("🗑 Remove", "danger")
         self.remove_button.clicked.connect(self.ask_remove)
         options.addWidget(self.remove_button, alignment=Qt.AlignmentFlag.AlignLeft)

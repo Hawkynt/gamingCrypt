@@ -161,6 +161,7 @@ class SteamService:
         game.description = meta.get("description", "")
         game.store_size = meta.get("storage_bytes")
         game.genres = list(meta.get("genres") or [])
+        game.age = meta.get("age")
         if not game.last_updated:
             game.last_updated = meta.get("last_update")
         return game
@@ -168,7 +169,7 @@ class SteamService:
     def needs_metadata(self, game: SteamGame) -> bool:
         meta = self._metadata.get(str(game.appid))
         # entries cached before sizes / genres were collected are refreshed once
-        return (not meta or "storage_bytes" not in meta or "genres" not in meta
+        return (not meta or "storage_bytes" not in meta or "genres" not in meta or "age" not in meta
                 or self.now() - meta.get("fetched_at", 0) > METADATA_TTL)
 
     def needs_metadata_for(self, appid: int) -> bool:
@@ -194,6 +195,7 @@ class SteamService:
             "last_update": news,
             "storage_bytes": details.get("storage_bytes"),
             "genres": details.get("genres") or [],
+            "age": details.get("age"),  # rated for (ratings.py); None: the store says nothing
             "fetched_at": int(self.now()),
         }
         with self._lock:

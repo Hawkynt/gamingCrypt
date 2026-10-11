@@ -269,13 +269,13 @@ def test_genres_and_years_of_emulated_games(emu):
     facts = RomFacts(emu, get=libretro(asked), now=lambda: 1000)
     games = {g.path.name: g for g in scan(emu, BY_ID["snes"])}
     assert facts.needs_fetch("snes") and facts.facts(games["Super Mario World (USA).sfc"]) == ((), None)
-    assert facts.fetch("snes") and len(asked) == 2
+    assert facts.fetch("snes") and len(asked) == 3  # genres, years, age ratings
     assert facts.facts(games["Super Mario World (USA).sfc"]) == (("Platform",), 1990)  # its exact name
     assert facts.facts(games["Super Mario Kart (Europe) (Rev 1).sfc"]) == (("Racing", "Action"), 1992)  # the title
     assert facts.facts(games["My Hack.sfc"]) == ((), None)
     again = RomFacts(emu, get=libretro(asked), now=lambda: 1000)  # kept on the drive
     assert not again.needs_fetch("snes") and again.facts(games["Super Mario World (USA).sfc"])[1] == 1990
-    assert len(asked) == 2
+    assert len(asked) == 3
     assert RomFacts(emu, now=lambda: 1000 + 31 * 86400).needs_fetch("snes")  # after a while: again
 
 

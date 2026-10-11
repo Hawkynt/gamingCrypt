@@ -1932,7 +1932,9 @@ def default_pages(config: dict) -> dict[str, QWidget]:
     from gamingcrypt import users
 
     games = GamesTab(service, library_path=library_path, library_settings=libraries, emulation_root=emulation_root,
-                     windows_root=windows_root, linux_root=linux_root, user=users.current(config))
+                     windows_root=windows_root, linux_root=linux_root, user=users.current(config),
+                     rate_games=users.current(config).admin and any(u.age is not None
+                                                                    for u in users.all_users(config)))
     from gamingcrypt.emulation import cores, retroarch
 
     if retroarch.available():

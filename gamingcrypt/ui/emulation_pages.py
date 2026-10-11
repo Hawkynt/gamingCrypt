@@ -325,6 +325,11 @@ class RomGamePage(QWidget):
             options.addLayout(self._options())
         from gamingcrypt.ui.cover_picker import picture_button, picture_row
 
+        from gamingcrypt.ui.rating_row import rating_row
+
+        self.rating_row = rating_row(tab, game)  # the admin's rating, where users have an age
+        if self.rating_row is not None:
+            options.addWidget(self.rating_row)
         self.identify_button = big_button("")
         self.identify_button.clicked.connect(lambda: tab.open_identify(self.game))
         self.identify_button.setVisible(getattr(tab, "rom_names", None) is not None)

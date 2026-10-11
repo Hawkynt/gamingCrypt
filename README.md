@@ -38,6 +38,8 @@ touch and controller, and can boot the device straight into a SteamOS-like gamin
 - 👥 **Users**: an admin and as many users as you add, each with a code of their own that
   unlocks the same drive - chosen on the lock screen. Every user has their own Steam account
   and settings, their own emulator saves and save states; only the admin can delete games.
+- 🔞 **Age ratings**: give a user an age and they see only the games rated for it (USK from the
+  Steam store, ESRB for emulated games); the admin can rate any game by hand.
 - 🎮 **Steam**: your whole library, downloads and uninstalls without Steam's dialogs, a download
   queue, Proton per game, store search, and several Steam accounts.
 - 🔎 **Filters**: all installed games by genre, platform and release year, sorted by name, date or last played.

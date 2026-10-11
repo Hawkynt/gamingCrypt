@@ -81,6 +81,13 @@ def format_price(cents: int | None, currency: str = "") -> str:
     return f"{value} €" if symbol == "€" else f"{symbol}{value}"
 
 
+def age_rating(details: dict) -> int | None:
+    """The age a game is rated for (0, 6, 12, 16, 18) - None: the store says nothing (see ratings.py)."""
+    from gamingcrypt import ratings
+
+    return ratings.from_store(details)
+
+
 class SteamWebAPI:
     def __init__(self, api_key: str = "", steam_id: str = "", country: str = "de",
                  language: str = "english", session: Any = None):
@@ -141,6 +148,7 @@ class SteamWebAPI:
             "header_image": d.get("header_image", ""),
             "storage_bytes": parse_storage(d.get("linux_requirements"), d.get("pc_requirements")),
             "genres": [g["description"] for g in d.get("genres") or [] if g.get("description")],
+            "age": age_rating(d),
         }
 
     def latest_news_date(self, appid: int) -> int | None:

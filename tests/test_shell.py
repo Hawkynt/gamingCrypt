@@ -243,7 +243,7 @@ def test_default_pages_pass_mount_point_to_games(monkeypatch):
 
     class Probe:
         def __init__(self, service, library_path="", library_settings=None, emulation_root="", windows_root="",
-                     linux_root="", user=None):
+                     linux_root="", user=None, rate_games=False):
             seen["user"] = user
             seen["path"] = library_path
             seen["libraries"] = library_settings

@@ -572,11 +572,22 @@ class GamesTab(QStackedWidget):
 
     def __init__(self, service, library_path: str = "", parent: QWidget | None = None,
                  library_settings: dict | None = None, emulation_root: str = "", windows_root: str = "",
-                 linux_root: str = "", user=None):
-        """user: who's using the device (users.User) - None: the admin."""
+                 linux_root: str = "", user=None, rate_games: bool = False):
+        """user: who's using the device (users.User) - None: the admin. rate_games: the game
+        pages offer "Age rating" (the admin, when a user has an age)."""
         super().__init__(parent)
         self.service = service
         self.user = user
+        self.rate_games = rate_games
+        # a user with an age: only the games rated for it (ratings.py) - in every list
+        self.age_limit = None if user is None or user.admin else user.age
+        if self.age_limit is not None:
+            from gamingcrypt.ratings import RatedService
+
+            self.service = service = RatedService(service, self)
+        self._all_roms: dict = {}  # what's on the drive, before the age filter
+        self._all_windows: list = []
+        self._all_linux: list = []
         # shared with the config: Settings changes it, apply_libraries() shows it
         self.library_settings = library_settings if library_settings is not None else {"hidden": []}
         from gamingcrypt.emulation.library import EmulationPaths
@@ -738,7 +749,30 @@ class GamesTab(QStackedWidget):
         here = {g.appid for games in [*self.roms.values(), self.pc_games()] for g in games}
         return [appid for appid in self.profiles.favorites() if appid < LINUX_APPID_BASE or appid in here]
 
+    def rated(self, games: list) -> list:
+        """The games whoever uses the tab may see."""
+        if self.age_limit is None:
+            return games
+        from gamingcrypt import ratings
+
+        return [g for g in games if ratings.allowed(g, self)]
+
+    def refilter(self, kind: str) -> None:
+        """A rating came in (a user with an age): what it's about is filtered anew."""
+        if self.age_limit is None:
+            return
+        if kind == "romdb":
+            self._roms_loaded(self._all_roms)
+        elif kind == "steam":
+            self.reload_installed()
+        else:
+            self._windows_loaded(self._all_windows)
+            self._linux_loaded(self._all_linux)
+
     def _roms_loaded(self, found: dict) -> None:
+        self._all_roms = found
+        if self.age_limit is not None:
+            found = {sid: kept for sid, games in found.items() if (kept := self.rated(games))}
         self.roms = found
         for games in found.values():
             if self.play_log is not None:
@@ -777,6 +811,8 @@ class GamesTab(QStackedWidget):
         for game in games:
             profile = self.profiles.get(game.appid)
             game.last_played, game.minutes = profile.get("last_played"), profile.get("minutes", 0)
+        self._all_windows = games
+        games = self.rated(games)
         self.windows_games = games
         from gamingcrypt.ui.wine_pages import WindowsLibraryPage
 
@@ -849,6 +885,8 @@ class GamesTab(QStackedWidget):
         for game in games:
             profile = self.profiles.get(game.appid)
             game.last_played, game.minutes = profile.get("last_played"), profile.get("minutes", 0)
+        self._all_linux = games
+        games = self.rated(games)
         self.linux_games = games
         from gamingcrypt.ui.wine_pages import LinuxLibraryPage
 
@@ -1040,13 +1078,15 @@ class GamesTab(QStackedWidget):
         ("store", appid) - the store page of that one."""
         queue = []
         if self.rom_facts is not None:  # emulated games: one list per system (libretro-database)
-            queue += [("romdb", sid) for sid, games in self.roms.items() if games and self.rom_facts.needs_fetch(sid)]
+            # (every game there is, also those a user with an age doesn't see yet: their ratings come this way)
+            queue += [("romdb", sid) for sid, games in (self._all_roms or self.roms).items()
+                      if games and self.rom_facts.needs_fetch(sid)]
         needs = getattr(self.service, "needs_metadata", None)
         if needs is None:
             return queue
-        queue += [("steam", g) for g in self.home.installed if needs(g)]
+        queue += [("steam", g) for g in [*self.home.installed, *getattr(self.service, "unrated", [])] if needs(g)]
         needs_for = getattr(self.service, "needs_metadata_for", None)
-        for game in self.pc_games():
+        for game in ([*self._all_windows, *self._all_linux] if self.age_limit is not None else self.pc_games()):
             covers = getattr(self, f"{game.KIND}_covers", None)
             if covers is None:
                 continue
@@ -1084,6 +1124,7 @@ class GamesTab(QStackedWidget):
                     service.fetch_metadata(appid)
 
         def done(_result=None) -> None:
+            self.refilter(kind)  # (before the next one may start)
             self._filling_facts = False
             home = self.home
             home.invalidate_facts()
