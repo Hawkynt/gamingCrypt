@@ -27,7 +27,7 @@ def sidecar_path(volume: str) -> Path:
     return Path(os.path.expanduser(volume) + SUFFIX)
 
 
-USER_FIELDS = ("id", "name", "method", "age", "slot")  # (not their Steam settings: those aren't for a file anyone can read)
+USER_FIELDS = ("id", "name", "method", "age", "locked", "slot")  # (not their Steam settings: those aren't for a file anyone can read)
 
 
 def write_sidecar(volume: str, unlock_cfg: dict, users: list | None = None, admin: dict | None = None) -> bool:
@@ -51,6 +51,10 @@ def write_sidecar(volume: str, unlock_cfg: dict, users: list | None = None, admi
     tmp = target.with_name("." + target.name + ".tmp")
     try:
         tmp.write_text(json.dumps(data, indent=2))
+        try:
+            os.chmod(tmp, 0o600)  # the owner's only (where the file system has that)
+        except OSError:
+            pass
         tmp.replace(target)
     except OSError:
         return False

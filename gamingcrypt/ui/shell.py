@@ -18,8 +18,10 @@ class Shell(QWidget):
     power_requested = Signal(str)  # "shutdown" / "restart" / "boot:<UEFI entry>"
 
     def __init__(self, pages: dict[str, QWidget] | None = None, parent: QWidget | None = None,
-                 battery_reader=read_battery, show_hints: bool = False):
+                 battery_reader=read_battery, show_hints: bool = False, locked=()):
+        """locked: tabs that aren't for whoever is logged in (the admin's choice, see users.py)."""
         super().__init__(parent)
+        self.locked = tuple(name for name in locked if name in TABS and name not in ("Games", "Settings"))
         self.battery_reader = battery_reader
         pages = pages or {}
         layout = QVBoxLayout(self)
@@ -38,6 +40,7 @@ class Shell(QWidget):
             button.clicked.connect(lambda _=False, n=name: self.show_tab(n))
             bar_layout.addWidget(button)
             self.tab_buttons[name] = button
+            button.setVisible(name not in self.locked)
             page = pages.get(name) or ComingSoon(name)
             self.pages[name] = page
             self.stack.addWidget(page)
@@ -94,12 +97,13 @@ class Shell(QWidget):
 
     def cycle_tab(self, delta: int) -> None:
         """LB / RB on the controller."""
-        index = (TABS.index(self.current_tab) + delta) % len(TABS)
+        open_tabs = [name for name in TABS if name not in self.locked]
+        name = open_tabs[(open_tabs.index(self.current_tab) + delta) % len(open_tabs)]
         highlight_in_bar = self.focusWidget() in self.tab_buttons.values()
-        self.show_tab(TABS[index])
+        self.show_tab(name)
         if highlight_in_bar:
             # keep the controller highlight on the open tab instead of the old one
-            self.tab_buttons[TABS[index]].setFocus()
+            self.tab_buttons[name].setFocus()
 
     def set_badge(self, name: str, count: int) -> None:
         """e.g. "Downloads (2)" - plain name when there's nothing."""
@@ -111,6 +115,8 @@ class Shell(QWidget):
         return bool(callable(hook) and hook())
 
     def show_tab(self, name: str) -> None:
+        if name in self.locked:
+            return
         self.current_tab = name
         self.stack.setCurrentWidget(self.pages[name])
         for tab, button in self.tab_buttons.items():

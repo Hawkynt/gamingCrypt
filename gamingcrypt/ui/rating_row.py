@@ -25,11 +25,12 @@ def rating_row(tab, game) -> QWidget | None:
                                                                       "with an age", None)
     for step in ratings.STEPS:
         combo.addItem(f"From {step}", step)
-    own = ratings.manual(tab.profiles.get(game.appid))
+    rated = getattr(tab, "rating_profiles", None) or tab.profiles
+    own = ratings.manual(rated.get(game.appid))
     combo.setCurrentIndex(max(0, combo.findData(own)))
     combo.currentIndexChanged.connect(
-        lambda _i: tab.profiles.set(game.appid, ratings.MANUAL,
-                                    None if combo.currentData() is None else str(combo.currentData())))
+        lambda _i: rated.set(game.appid, ratings.MANUAL,
+                             None if combo.currentData() is None else str(combo.currentData())))
     line.addWidget(combo, 1)
     row.combo = combo
     return row

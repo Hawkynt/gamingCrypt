@@ -139,6 +139,10 @@ def test_a_user_with_an_age_sees_what_is_rated_for_it(qtbot, emu, age, roms, ste
 
 
 def test_nothing_older_in_continue_playing_or_the_library(qtbot, emu):
+    from gamingcrypt import game_profiles
+
+    game_profiles.for_user(user(6)).set(1, "last_played", 50)  # what Mia played herself
+    game_profiles.for_user(user(6)).set(3, "last_played", 99)
     tab = tab_for(qtbot, emu, user(6))
     assert tab.home.continue_card.game.name == "Kids Game"  # not the adult game played last
     assert names(tab.service.load_library()) == ["Kids Game", "Owned Kids Game"]
@@ -155,7 +159,7 @@ def test_nothing_older_in_continue_playing_or_the_library(qtbot, emu):
 def test_a_user_without_an_age_sees_everything(qtbot, emu):
     tab = tab_for(qtbot, emu, user(None))
     assert len(tab.roms["snes"]) == 4 and len(tab.home.installed) == 4 and tab.age_limit is None
-    assert tab.service is not None and not hasattr(tab.service, "unrated")  # the service itself
+    assert tab.service.unrated == []  # nothing is held back
 
 
 def test_the_admins_own_rating_counts(qtbot, emu):

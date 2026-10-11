@@ -1,5 +1,6 @@
-"""Per-game settings that GamingCrypt applies while the game runs: power limit and
-FPS limit (gaming mode). Stored next to the config as game-profiles.json."""
+"""Per-game settings that GamingCrypt applies while the game runs (power limit, FPS limit,
+emulator options …), favorites, and when Windows / Linux games were played. Stored next to the
+config: game-profiles.json is the admin's, game-profiles-<user id>.json each other user's own."""
 
 from __future__ import annotations
 
@@ -13,6 +14,17 @@ def default_path() -> Path:
     from gamingcrypt.config import config_dir
 
     return config_dir() / "game-profiles.json"
+
+
+def path_for(user) -> Path:
+    """The file of that user (users.User; None or the admin: the one there always was)."""
+    if user is None or user.admin:
+        return default_path()
+    return default_path().with_name(f"game-profiles-{user.id}.json")
+
+
+def for_user(user) -> "GameProfiles":
+    return GameProfiles(path_for(user))
 
 
 class GameProfiles:

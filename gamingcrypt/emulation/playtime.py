@@ -1,4 +1,5 @@
-"""When emulated games were played and for how long - Emulation/config/playtime.json."""
+"""When emulated games were played and for how long - Emulation/config/playtime.json (the
+admin's), Emulation/users/<id>/playtime.json (another user's own)."""
 
 from __future__ import annotations
 
@@ -11,7 +12,8 @@ from gamingcrypt.emulation.library import EmulationPaths, RomGame
 
 class PlayLog:
     def __init__(self, paths: EmulationPaths, now: Callable[[], float] = time.time):
-        self.path = paths.config / "playtime.json"
+        own = getattr(paths, "user", "")
+        self.path = (paths.root / "users" / own if own else paths.config) / "playtime.json"
         self.now = now
         self.started: dict[int, float] = {}
 

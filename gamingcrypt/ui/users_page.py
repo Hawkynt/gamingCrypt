@@ -78,25 +78,28 @@ class CodeFlow(QWidget):
         self.index = 0
         self.busy = False
         self.pending: str | None = None  # a new code, waiting to be repeated
+        # Little around the pad: the 5 x 5 pattern needs the height (it was cut off on 1280 x 800).
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(40, 20, 40, 20)
+        layout.setContentsMargins(30, 8, 30, 8)
+        layout.setSpacing(4)
+        top = QHBoxLayout()
+        self.cancel_button = big_button("Cancel")
+        self.cancel_button.clicked.connect(self._cancel)
+        top.addWidget(self.cancel_button)
         heading = QLabel(title)
-        heading.setObjectName("title")
-        layout.addWidget(heading)
+        heading.setObjectName("section")
+        top.addWidget(heading)
         self.prompt = QLabel("")
         self.prompt.setObjectName("subtitle")
-        self.prompt.setWordWrap(True)
-        layout.addWidget(self.prompt)
-        self.body = QVBoxLayout()
-        layout.addLayout(self.body, 1)
-        self.widget: QWidget | None = None
+        top.addWidget(self.prompt, 1)
+        layout.addLayout(top)
         self.status = QLabel("")
         self.status.setObjectName("status")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
-        self.cancel_button = big_button("Cancel")
-        self.cancel_button.clicked.connect(self._cancel)
-        layout.addWidget(self.cancel_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.body = QVBoxLayout()
+        layout.addLayout(self.body, 1)
+        self.widget: QWidget | None = None
         self.method_buttons: dict[str, QWidget] = {}
         self.input: SecretInput | None = None
         self.show_step()
@@ -104,6 +107,7 @@ class CodeFlow(QWidget):
     def _show(self, widget: QWidget) -> None:
         if self.widget is not None:
             self.body.removeWidget(self.widget)
+            self.widget.hide()  # (gone at once: it would lie over the next one until it's deleted)
             self.widget.deleteLater()
         self.widget = widget
         self.body.addWidget(widget, 1)
@@ -218,7 +222,7 @@ class UsersSection(QFrame):
         self.body.addWidget(self.hint)
         self.list = QVBoxLayout()
         self.body.addLayout(self.list)
-        self.add_button = big_button("＋  Add a user", "primary")
+        self.add_button = big_button("+  Add a user", "primary")
         self.add_button.clicked.connect(self.add_user)
         self.body.addWidget(self.add_button, alignment=Qt.AlignmentFlag.AlignLeft)
         self.rows: dict[str, dict] = {}
@@ -278,6 +282,24 @@ class UsersSection(QFrame):
                 line.addWidget(delete)
                 widgets["delete"] = delete
             self.list.addWidget(row)
+            if me.admin and not user.admin:  # what this user doesn't get
+                locks = QWidget()
+                locks.setObjectName("menuRow")
+                lock_line = QHBoxLayout(locks)
+                lock_line.setContentsMargins(24, 0, 0, 6)
+                caption = QLabel("Locked:")
+                caption.setObjectName("cardMeta")
+                lock_line.addWidget(caption)
+                widgets["locks"] = {}
+                for tab in users.LOCKABLE:
+                    button = big_button("", checkable=True)
+                    button.setChecked(tab in user.locked)
+                    button.setText(("🔒 " if tab in user.locked else "") + tab)
+                    button.toggled.connect(lambda on, u=user, t=tab: self.set_locked(u, t, on))
+                    lock_line.addWidget(button)
+                    widgets["locks"][tab] = button
+                lock_line.addStretch()
+                self.list.addWidget(locks)
             self.rows[user.id] = widgets
 
     def _saved(self, message: str = "") -> None:
@@ -300,6 +322,10 @@ class UsersSection(QFrame):
     def set_age(self, user, age) -> None:
         users.set_age(self.config, user.id, age)
         self._saved(f"{user.name}: games for {'any age' if age is None else f'age {age}'}")
+
+    def set_locked(self, user, tab: str, locked: bool) -> None:
+        users.set_locked(self.config, user.id, tab, locked)
+        self._saved(f"{user.name}: {tab} {'locked' if locked else 'open again'} - from their next login")
 
     def rename_user(self, user) -> None:
         page = NamePage(f"Rename {user.name}", user.name, lambda text: users.check_name(self.config, text, user.id))

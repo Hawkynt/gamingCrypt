@@ -1,6 +1,7 @@
 """Settings -> Security -> Users, and the app with more than one user."""
 
 import copy
+from pathlib import Path
 
 import pytest
 
@@ -68,7 +69,7 @@ def test_adding_a_user(qtbot, tab):
     assert (mia.name, mia.method, mia.admin) == ("Mia", "pattern", False) and "Mia can log in now" in tab.status.text()
     assert users.volume_password(cfg, mia.id, "14789") == kdf.derive_password(ADMIN_CODE, cfg["unlock"]["kdf"])
     assert tab._saved[-1]["users"][0]["name"] == "Mia" and "keyring" in tab._saved[-1]["unlock"]
-    assert set(section.rows[mia.id]) == {"label", "rename", "age", "code", "delete"}
+    assert set(section.rows[mia.id]) == {"label", "rename", "age", "code", "delete", "locks"}
     assert flow is not tab.currentWidget()
 
 
@@ -387,3 +388,248 @@ def test_steam_is_switched_to_the_account_of_who_logs_in(qtbot, tmp_path):
     qtbot.waitUntil(lambda: window.screen_name == "shell", timeout=10000)
     qtbot.wait(200)
     assert switched == ["222", "111"]
+
+
+# --- favorites, play time and game settings are each user's own -----------------------------------
+
+def test_game_profiles_are_per_user(qtbot, emu):
+    from gamingcrypt import game_profiles
+    from gamingcrypt.config import config_dir
+
+    cfg, mia = a_user()
+    assert game_profiles.path_for(None) == game_profiles.path_for(users.admin(cfg)) == config_dir() / "game-profiles.json"
+    assert game_profiles.path_for(mia) == config_dir() / f"game-profiles-{mia.id}.json"
+    admin_tab, mia_tab = games_tab(qtbot, emu, users.admin(cfg)), games_tab(qtbot, emu, mia)
+    game = admin_tab.roms["snes"][0]
+    admin_tab.profiles.set(game.appid, "favorite", True)
+    admin_tab.profiles.set(game.appid, "fps", 30)
+    assert admin_tab.profiles.is_favorite(game.appid) and not mia_tab.profiles.is_favorite(game.appid)
+    assert mia_tab.profiles.get(game.appid) == {} and mia_tab.favorites() == []
+    mia_tab.profiles.set(620, "favorite", True)
+    assert mia_tab.favorites() == [620] and admin_tab.favorites() == [game.appid]
+    assert game_profiles.for_user(mia).favorites() == [620]  # kept in her file
+    # ... but the admin's age ratings count for everybody
+    admin_tab.rating_profiles.set(game.appid, "rating", "6")
+    from gamingcrypt import ratings
+
+    assert ratings.age_of(game, mia_tab) == 6 and "rating" not in mia_tab.profiles.get(game.appid)
+
+
+def test_play_time_of_emulated_games_is_per_user(qtbot, emu):
+    cfg, mia = a_user()
+    admin_tab, mia_tab = games_tab(qtbot, emu, users.admin(cfg)), games_tab(qtbot, emu, mia)
+    assert admin_tab.play_log.path == emu.config / "playtime.json"  # the admin's: where it always was
+    assert mia_tab.play_log.path == emu.root / "users" / mia.id / "playtime.json"
+    game = admin_tab.roms["snes"][0]
+    admin_tab.play_log.start(game)
+    admin_tab.play_log.finish(game.appid)
+    assert admin_tab.play_log.get(game.appid)[0] is not None and mia_tab.play_log.get(game.appid) == (None, 0)
+    mia_tab.play_log.start(game)
+    assert mia_tab.play_log.path.exists() and mia_tab.play_log.get(game.appid)[0] is not None
+
+
+def test_the_app_uses_the_profiles_of_who_is_logged_in(qtbot, tmp_path):
+    from gamingcrypt import game_profiles
+    from gamingcrypt.app import MainWindow
+
+    cfg, mia = a_user()
+    volume_file = tmp_path / "x.vc"
+    volume_file.write_bytes(b"x")
+    cfg["unlock"]["volume"] = str(volume_file)
+    volume = Volume(kdf.derive_password(ADMIN_CODE, cfg["unlock"]["kdf"]))
+    window = MainWindow(cfg, lambda c: None, volume.factory, page_factory=lambda c: {})
+    qtbot.addWidget(window)
+    assert window.game_profiles.path == game_profiles.path_for(None)
+    lock = window.stack.currentWidget()
+    lock.user_buttons[mia.id].click()
+    lock.input.secret_entered.emit("1111")
+    qtbot.waitUntil(lambda: window.screen_name == "shell", timeout=10000)
+    assert window.game_profiles.path == game_profiles.path_for(mia)
+    window.panic_lock()
+    lock = window.stack.currentWidget()
+    lock.user_buttons["admin"].click()
+    lock.input.secret_entered.emit(ADMIN_CODE)
+    qtbot.waitUntil(lambda: window.screen_name == "shell", timeout=10000)
+    assert window.game_profiles.path == game_profiles.path_for(None)
+
+
+# --- what the admin locks for a user ---------------------------------------------------------------
+
+def test_locking_tabs_for_a_user():
+    cfg, mia = a_user()
+    assert users.LOCKABLE == ("Movies", "Shows", "Music", "Pictures") and mia.locked == ()
+    users.set_locked(cfg, mia.id, "Shows", True)
+    users.set_locked(cfg, mia.id, "Movies", True)
+    users.set_locked(cfg, mia.id, "Movies", True)
+    assert users.get(cfg, mia.id).locked == ("Movies", "Shows") and users.admin(cfg).locked == ()
+    users.set_locked(cfg, mia.id, "Movies", False)
+    assert users.get(cfg, mia.id).locked == ("Shows",)
+    for user_id, tab in (("admin", "Movies"), (mia.id, "Games"), (mia.id, "Settings")):
+        with pytest.raises(users.UserError):
+            users.set_locked(cfg, user_id, tab, True)
+    assert users.persistable(cfg)["users"][0]["locked"] == ["Shows"]
+
+
+def test_the_admin_locks_in_settings(qtbot, tab):
+    add(qtbot, tab, "Mia", "pin", "1111")
+    qtbot.waitUntil(lambda: tab.currentWidget() is tab.overview, timeout=10000)
+    section, cfg = tab.users_section, tab.config
+    mia = users.all_users(cfg)[1]
+    locks = section.rows[mia.id]["locks"]
+    assert list(locks) == ["Movies", "Shows", "Music", "Pictures"] and not any(b.isChecked() for b in locks.values())
+    assert "locks" not in section.rows["admin"]
+    locks["Movies"].click()
+    assert users.get(cfg, mia.id).locked == ("Movies",) and tab._saved[-1]["users"][0]["locked"] == ["Movies"]
+    locks = section.rows[mia.id]["locks"]  # (the list was drawn anew)
+    assert locks["Movies"].isChecked() and locks["Movies"].text() == "🔒 Movies" and locks["Shows"].text() == "Shows"
+    locks["Pictures"].click()
+    section.rows[mia.id]["locks"]["Movies"].click()  # open again
+    assert users.get(cfg, mia.id).locked == ("Pictures",)
+
+
+def test_locked_tabs_are_not_there(qtbot):
+    from gamingcrypt.ui.shell import TABS, Shell
+
+    shell = Shell({}, locked=("Movies", "Shows", "Music", "Pictures", "Settings"))  # (Settings can't be locked)
+    qtbot.addWidget(shell)
+    shell.show()
+    shown = [name for name in TABS if shell.tab_buttons[name].isVisibleTo(shell)]
+    assert shown == ["Games", "Downloads", "Settings"]
+    shell.show_tab("Movies")
+    assert shell.current_tab == "Games"  # no way in
+    walked = []
+    for _ in range(4):
+        shell.cycle_tab(1)  # the shoulder buttons skip them
+        walked.append(shell.current_tab)
+    assert walked == ["Downloads", "Settings", "Games", "Downloads"]
+    shell.cycle_tab(-1)
+    shell.cycle_tab(-1)
+    assert shell.current_tab == "Settings"
+    everything = Shell({})
+    qtbot.addWidget(everything)
+    everything.show()
+    assert all(everything.tab_buttons[name].isVisibleTo(everything) for name in TABS)
+
+
+def test_locked_movies_and_shows_are_not_even_looked_through(monkeypatch):
+    from gamingcrypt import app
+    from gamingcrypt.ui import games_tab, movies_tab, shows_tab
+
+    made = []
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(games_tab, "GamesTab", lambda *a, **k: SimpleNamespace())
+    monkeypatch.setattr(movies_tab, "MoviesTab", lambda *a, **k: made.append("Movies") or "movies")
+    monkeypatch.setattr(shows_tab, "ShowsTab", lambda *a, **k: made.append("Shows") or "shows")
+    monkeypatch.setattr("gamingcrypt.ui.downloads_tab.DownloadsTab", lambda service: "downloads")
+    cfg, mia = a_user()
+    assert set(app.default_pages(cfg)) == {"Games", "Downloads", "Movies", "Shows"}  # the admin: everything
+    users.set_locked(cfg, mia.id, "Movies", True)
+    users.enter(cfg, mia.id)
+    made.clear()
+    assert set(app.default_pages(cfg)) == {"Games", "Downloads", "Shows"} and made == ["Shows"]
+
+
+# --- recently played is each user's own ------------------------------------------------------------
+
+def test_steam_games_show_what_the_user_played_not_the_steam_account(qtbot, emu):
+    from gamingcrypt import game_profiles
+    from gamingcrypt.steam.models import SteamGame
+    from gamingcrypt.ui.games_tab import GamesTab, last_played
+    from gamingcrypt.ui.recent_page import recently_played
+    from tests.fakes import FakeService
+
+    cfg, mia = a_user()
+    steam = [SteamGame(620, "Portal 2", installed=True, last_played=1700000000, playtime_minutes=600),
+             SteamGame(400, "Portal", installed=True, last_played=1600000000, playtime_minutes=30)]
+    game_profiles.for_user(mia).set(400, "last_played", 1710000000)
+    game_profiles.for_user(mia).set(400, "minutes", 12)
+    tab = GamesTab(FakeService(games=copy.deepcopy(steam)), user=mia)
+    qtbot.addWidget(tab)
+    tab.show()
+    qtbot.waitUntil(lambda: len(tab.home.installed) == 2)
+    mine = {g.appid: g for g in tab.service.load_library()}
+    assert (mine[400].last_played, mine[400].playtime_minutes) == (1710000000, 12)
+    assert (mine[620].last_played, mine[620].playtime_minutes) == (None, 0)  # never played by her
+    assert [g.name for g in recently_played(list(mine.values()))] == ["Portal"]
+    assert last_played(tab.home.installed).name == "Portal" and tab.home.continue_card.game.name == "Portal"
+    admin_tab = GamesTab(FakeService(games=copy.deepcopy(steam)), user=users.admin(cfg))
+    qtbot.addWidget(admin_tab)
+    admin_tab.show()
+    qtbot.waitUntil(lambda: len(admin_tab.home.installed) == 2)
+    assert admin_tab.home.continue_card.game.name == "Portal 2"  # the admin: as Steam says, as ever
+
+
+def test_the_app_keeps_a_users_steam_play_time(qtbot, tmp_path, monkeypatch):
+    import time as time_module
+
+    from gamingcrypt.app import MainWindow
+
+    cfg, mia = a_user()
+    window = MainWindow(cfg, lambda c: None, page_factory=lambda c: {})
+    qtbot.addWidget(window)
+    clock = {"now": 1_800_000_000.0}
+    monkeypatch.setattr(time_module, "time", lambda: clock["now"])
+    window.logged_in(users.admin(cfg), ADMIN_CODE)
+    window.game_started(620)
+    clock["now"] += 600
+    window.game_ended(620)
+    assert window.game_profiles.get(620) == {}  # the admin's: Steam's own numbers, nothing kept
+    window.logged_in(mia, "1111")
+    assert not window.own_steam_history(0x70000001) and window.own_steam_history(620)
+    window.game_started(620)
+    assert window.game_profiles.get(620)["last_played"] == 1_800_000_600
+    clock["now"] += 25 * 60
+    window.game_ended(620)
+    assert window.game_profiles.get(620) == {"last_played": 1_800_002_100, "minutes": 25}
+    window.game_started(620)
+    clock["now"] += 5 * 60
+    window.game_ended(620)
+    assert window.game_profiles.get(620)["minutes"] == 30
+
+
+def test_config_is_readable_by_its_owner_only(tmp_path):
+    import os
+    import stat
+
+    from gamingcrypt.config import load_config, save_config
+
+    path = tmp_path / "gamingcrypt" / "config.json"
+    path.parent.mkdir()
+    path.write_text("{}")
+    os.chmod(path, 0o644)  # as older versions wrote it
+    cfg, mia = a_user()
+    save_config(users.persistable(cfg), path)
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600 and not path.with_name("config.json.tmp").exists()
+    assert users.get(load_config(path), mia.id).name == "Mia"
+    volume = tmp_path / "games.vc"
+    volume.write_bytes(b"x")
+    cfg["unlock"]["volume"] = str(volume)
+    assert users.write_sidecar(cfg)
+    assert stat.S_IMODE(Path(str(volume) + ".gamingcrypt.json").stat().st_mode) == 0o600
+
+
+def test_ways_around_the_restrictions_are_the_admins(qtbot, tmp_path):
+    """Desktop mode, SSH and the network share reach the whole drive and the settings."""
+    from gamingcrypt.app import MainWindow
+    from gamingcrypt.ui.settings_tab import SettingsTab
+
+    cfg, mia = a_user()
+    volume_file = tmp_path / "x.vc"
+    volume_file.write_bytes(b"x")
+    cfg["unlock"]["volume"] = str(volume_file)
+    volume = Volume(kdf.derive_password(ADMIN_CODE, cfg["unlock"]["kdf"]))
+    window = MainWindow(cfg, lambda c: None, volume.factory, page_factory=lambda c: {})
+    qtbot.addWidget(window)
+    for who, code, allowed in ((mia.id, "1111", False), ("admin", ADMIN_CODE, True)):
+        lock = window.stack.currentWidget()
+        lock.user_buttons[who].click()
+        lock.input.secret_entered.emit(code)
+        qtbot.waitUntil(lambda: window.screen_name == "shell", timeout=10000)
+        assert window.shell.power_menu.desktop_button.isHidden() is not allowed
+        assert window.shell.pages["Settings"].services_page.isHidden() is not allowed
+        window.panic_lock()
+    old = config()  # no users: nothing changes
+    tab = SettingsTab(old, lambda c: None, system=SystemControls())
+    qtbot.addWidget(tab)
+    assert not tab.services_page.isHidden()

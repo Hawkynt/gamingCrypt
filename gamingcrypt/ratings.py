@@ -71,7 +71,8 @@ def automatic(game, tab) -> int | None:
 
 
 def age_of(game, tab) -> int | None:
-    own = manual(tab.profiles.get(game.appid)) if getattr(tab, "profiles", None) is not None else None
+    rated = getattr(tab, "rating_profiles", None) or getattr(tab, "profiles", None)  # (the admin's)
+    own = manual(rated.get(game.appid)) if rated is not None else None
     return own if own is not None else automatic(game, tab)
 
 
@@ -85,8 +86,11 @@ def allowed(game, tab) -> bool:
 
 
 class RatedService:
-    """The Steam service for a user with an age: the games rated for older ones (or not at all)
-    aren't in what it lists. Everything else is the service's own."""
+    """The Steam service for a user who isn't the admin. What it lists is theirs:
+    - when a game was played last, and for how long, is what *they* played (Steam itself only
+      knows it per Steam account - GamingCrypt keeps it with the user, see app.game_started);
+    - with an age: the games rated for older ones (or not at all) aren't in it.
+    Everything else is the service's own."""
 
     _OWN = ("_service", "_tab", "unrated")
 
@@ -105,6 +109,14 @@ class RatedService:
             setattr(self._service, name, value)
 
     def _rated(self, games: list) -> list:
+        profiles = getattr(self._tab, "profiles", None)
+        played = profiles._all() if profiles is not None else {}
+        for game in games:
+            own = played.get(str(game.appid)) or {}
+            game.last_played = own.get("last_played")
+            game.playtime_minutes = int(own.get("minutes", 0) or 0)
+        if getattr(self._tab, "age_limit", None) is None:
+            return games
         self.unrated = [g for g in games if getattr(g, "installed", False) and age_of(g, self._tab) is None]
         return [g for g in games if allowed(g, self._tab)]
 

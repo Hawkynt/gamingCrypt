@@ -505,6 +505,9 @@ class MainWindow(QMainWindow):
 
         user = users.enter(self.config, user.id if user is not None else None)
         log.info("unlocked by %s", "the admin" if user.admin else "a user")
+        from gamingcrypt import game_profiles
+
+        self.game_profiles = game_profiles.for_user(user)  # per-game settings: their own
         if self.config.get("last_user") != user.id and len(users.all_users(self.config)) > 1:
             self.config["last_user"] = user.id  # chosen on the lock screen the next time
             self.save(self.config)
@@ -527,7 +530,7 @@ class MainWindow(QMainWindow):
             ok, message = service.switch_account(account)
             return f"Steam: {account.persona}" if ok else message
 
-        run_async(work, lambda text: self.notify(text, "👤") if text else None, lambda _e: None, owner=self)
+        run_async(work, lambda text: self.notify(text, "ℹ") if text else None, lambda _e: None, owner=self)
 
     def is_admin_code(self, secret: str) -> bool:
         """Is that the code the admin unlocked with (this session)? For the first user that's added:
@@ -558,7 +561,27 @@ class MainWindow(QMainWindow):
         return self.config.get("system", {}).get("power_limit_w") or getattr(self, "_power_before_game", None)
 
     # per-game profile (Options on the game page) --------------------------------------------
+    def own_steam_history(self, appid: int | None) -> bool:
+        """A Steam game played by a user who isn't the admin: when and how long is kept with the
+        user (Steam only knows it per Steam account) - for their Continue playing / Recently played."""
+        from gamingcrypt import users
+        from gamingcrypt.emulation.library import EMU_APPID_BASE
+        from gamingcrypt.linux.library import is_linux_appid
+        from gamingcrypt.movies.library import is_movie_appid
+        from gamingcrypt.wine.library import is_wine_appid
+
+        return (appid is not None and appid < EMU_APPID_BASE and not is_wine_appid(appid)
+                and not is_linux_appid(appid) and not is_movie_appid(appid)
+                and not users.current(self.config).admin)
+
     def game_started(self, appid: int) -> None:
+        import time
+
+        if self.own_steam_history(appid):
+            if not hasattr(self, "_steam_started"):
+                self._steam_started = {}
+            self._steam_started[appid] = time.time()
+            self.game_profiles.set(appid, "last_played", int(time.time()))
         profile = self.game_profiles.get(appid)
         power = getattr(self.system, "power", None)
         if profile.get("power_w") and power is not None and not self.config.get("system", {}).get("power_limit_w"):
@@ -590,6 +613,16 @@ class MainWindow(QMainWindow):
         self.end_game_refresh()  # the screen's own refresh rate again
         self.stop_upscaling()
         self.windows_game_ended(appid)
+        started = getattr(self, "_steam_started", {}).pop(appid, None) if appid is not None else None
+        if started is not None:  # a user's own play time of a Steam game
+            import time
+
+            minutes = int(self.game_profiles.get(appid).get("minutes", 0)) + max(0, round((time.time() - started) / 60))
+            self.game_profiles.set(appid, "minutes", minutes)
+            self.game_profiles.set(appid, "last_played", int(time.time()))
+            tab = self.shell.pages.get("Games") if self.shell is not None else None
+            if hasattr(tab, "reload_installed"):
+                tab.reload_installed()  # Continue playing, Recently played
         for tab in self.video_tabs():
             if appid is not None:
                 tab.movie_ended(appid)  # watched? where it was stopped
@@ -1240,7 +1273,7 @@ class MainWindow(QMainWindow):
             if not saved:  # a core without save states: nothing to come back to
                 busy(False)
                 self.notify(unsaved or f"{speed:g}x from the next start - this game can't be saved while it runs",
-                            "⏩")
+                            "ℹ")
                 return
             if getattr(self.running_rom(), "appid", None) != appid:
                 busy(False)
@@ -1476,7 +1509,10 @@ class MainWindow(QMainWindow):
         if mounted:
             from gamingcrypt import users
 
-            users.enter(self.config, (self.verifier or {}).get("user"))  # who was logged in
+            from gamingcrypt import game_profiles
+
+            user = users.enter(self.config, (self.verifier or {}).get("user"))  # who was logged in
+            self.game_profiles = game_profiles.for_user(user)
         return mounted
 
     def desktop_mode(self) -> None:
@@ -1719,7 +1755,10 @@ class MainWindow(QMainWindow):
         for name in ("Movies", "Shows"):
             if hasattr(pages.get(name), "player_launcher"):
                 pages[name].player_launcher = self.launch_movie
-        self.shell = Shell(pages, show_hints=in_gaming_session())
+        from gamingcrypt import users
+
+        # (what the admin locked for this user isn't there)
+        self.shell = Shell(pages, show_hints=in_gaming_session(), locked=users.current(self.config).locked)
         self.use_own_steam_account(service)
         theme.on_change(self.retheme)
         self.shell.exit_requested.connect(self.desktop_mode)
@@ -1733,6 +1772,9 @@ class MainWindow(QMainWindow):
         if hasattr(settings, "hotkeys_changed"):
             settings.hotkeys_changed.connect(self.reload_hotkeys)
         self.shell.power_menu.sleep_button.setVisible(self.sleep_allowed())
+        # The desktop has the whole drive and GamingCrypt's settings in the open: what's locked for
+        # a user, their age, deleting games - none of it counts there. So it's the admin's.
+        self.shell.power_menu.desktop_button.setVisible(users.current(self.config).admin)
         self.load_other_systems(self.shell.power_menu)
         self._replace(self.shell)
         self.screen_name = "shell"
@@ -1948,9 +1990,13 @@ def default_pages(config: dict) -> dict[str, QWidget]:
     from gamingcrypt.ui.shows_tab import ShowsTab
 
     languages = languages_for(config)
-    movies = MoviesTab(os.path.join(mount_point, "Movies") if mount_point else "", languages=languages)
-    shows = ShowsTab(os.path.join(mount_point, "Shows") if mount_point else "", languages=languages)
-    return {"Games": games, "Downloads": DownloadsTab(service), "Movies": movies, "Shows": shows}
+    pages = {"Games": games, "Downloads": DownloadsTab(service)}
+    locked = users.current(config).locked  # by the admin, for this user: not even looked through
+    if "Movies" not in locked:
+        pages["Movies"] = MoviesTab(os.path.join(mount_point, "Movies") if mount_point else "", languages=languages)
+    if "Shows" not in locked:
+        pages["Shows"] = ShowsTab(os.path.join(mount_point, "Shows") if mount_point else "", languages=languages)
+    return pages
 
 
 SECRET_FORMAT_HINT = {

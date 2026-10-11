@@ -27,6 +27,7 @@ from gamingcrypt.unlock.secrets import METHODS
 ADMIN = "admin"
 MAX_NAME = 24
 AGES = (0, 6, 12, 16, 18)  # the steps of the German ratings (FSK / USK)
+LOCKABLE = ("Movies", "Shows", "Music", "Pictures")  # tabs the admin can lock for a user
 
 
 class UserError(ValueError):
@@ -40,6 +41,7 @@ class User:
     method: str
     admin: bool = False
     age: int | None = None  # None: no limit
+    locked: tuple[str, ...] = ()  # tabs this user doesn't get (LOCKABLE)
 
     @property
     def can_delete_games(self) -> bool:
@@ -64,7 +66,8 @@ def all_users(config: dict) -> list[User]:
         age = record.get("age")
         found.append(User(str(record["id"]), str(record.get("name") or record["id"]),
                           record.get("method") if record.get("method") in METHODS else "password",
-                          age=int(age) if isinstance(age, int) and not isinstance(age, bool) else None))
+                          age=int(age) if isinstance(age, int) and not isinstance(age, bool) else None,
+                          locked=tuple(t for t in LOCKABLE if t in (record.get("locked") or ()))))
     return found
 
 
@@ -114,6 +117,17 @@ def set_age(config: dict, user_id: str, age: int | None) -> None:
     if user_id == ADMIN:
         raise UserError("The admin has no age limit")
     _record(config, user_id)["age"] = None if age is None else max(0, int(age))
+
+
+def set_locked(config: dict, user_id: str, tab: str, locked: bool) -> None:
+    """Movies, Shows, Music or Pictures: not for this user (or again)."""
+    if user_id == ADMIN:
+        raise UserError("Nothing is locked for the admin")
+    if tab not in LOCKABLE:
+        raise UserError(f"{tab} can't be locked")
+    record = _record(config, user_id)
+    now = [t for t in LOCKABLE if (t in (record.get("locked") or ()) and t != tab) or (t == tab and locked)]
+    record["locked"] = now
 
 
 # --- codes -----------------------------------------------------------------------------------

@@ -37,7 +37,8 @@ touch and controller, and can boot the device straight into a SteamOS-like gamin
   swipe pattern or 5×5 tap pattern. First start can create the container for you.
 - 👥 **Users**: an admin and as many users as you add, each with a code of their own that
   unlocks the same drive - chosen on the lock screen. Every user has their own Steam account
-  and settings, their own emulator saves and save states; only the admin can delete games.
+  and settings, favorites, play time, per-game settings, emulator saves and save states; only
+  the admin can delete games, and can lock Movies, Shows, Music and Pictures for a user.
 - 🔞 **Age ratings**: give a user an age and they see only the games rated for it (USK from the
   Steam store, ESRB for emulated games); the admin can rate any game by hand.
 - 🎮 **Steam**: your whole library, downloads and uninstalls without Steam's dialogs, a download

@@ -581,7 +581,7 @@ class GamesTab(QStackedWidget):
         self.rate_games = rate_games
         # a user with an age: only the games rated for it (ratings.py) - in every list
         self.age_limit = None if user is None or user.admin else user.age
-        if self.age_limit is not None:
+        if user is not None and not user.admin:  # (and what they played, not what the Steam account did)
             from gamingcrypt.ratings import RatedService
 
             self.service = service = RatedService(service, self)
@@ -643,7 +643,10 @@ class GamesTab(QStackedWidget):
         self._came_from: list = []
         from gamingcrypt.game_profiles import GameProfiles
 
-        self.profiles = GameProfiles()  # favorites, per-game power / FPS limit
+        from gamingcrypt.game_profiles import for_user
+
+        self.profiles = for_user(user)  # favorites, per-game settings: each user's own
+        self.rating_profiles = GameProfiles()  # the admin's age ratings count for everybody
         self.home = GamesHome(self)
         self.addWidget(self.home)
         from gamingcrypt.ui.cover_picker import HoldToChoose
@@ -675,6 +678,10 @@ class GamesTab(QStackedWidget):
     def push(self, page: QWidget) -> None:
         # remember what was selected, so "back" can select it again
         self._came_from.append(self.window().focusWidget() if self.window() else None)
+        home = getattr(self, "home", None)
+        if home is not None and home.start_focus_tries >= 0:
+            home.start_focus_tries = -1  # somewhere else already: the start's highlight isn't waited for
+            home.start_focus.stop()
         self.addWidget(page)
         self.setCurrentWidget(page)
 
