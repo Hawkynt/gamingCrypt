@@ -89,7 +89,8 @@ def write_config(paths: EmulationPaths, extra: dict[str, str] | None = None) -> 
         "video_fullscreen": "true", "pause_nonactive": "false", "config_save_on_exit": "false",
         "network_cmd_enable": "true", "network_cmd_port": str(COMMAND_PORT),
         "input_autodetect_enable": "true",
-        "quit_press_twice": "false",  # Esc once quits - no "press again to quit"
+        # Esc doesn't quit the game (a slip on a keyboard ended it) - Force quit in the quick menu does
+        "input_exit_emulator": "nul", "input_exit_emulator_btn": "nul", "input_exit_emulator_axis": "nul",
         # no RetroArch menu or on-screen overlay over the game - GamingCrypt's quick menu does it all
         # (L3 + R3 opened RetroArch's menu by accident: games use both stick clicks)
         "input_menu_toggle_gamepad_combo": "0", "input_menu_toggle_btn": "nul", "input_menu_toggle_axis": "nul",

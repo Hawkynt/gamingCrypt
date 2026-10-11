@@ -157,8 +157,9 @@ def test_play_and_quick_menu_states(qtbot, emu, monkeypatch, tmp_path):
     assert not menu.state_row.isVisibleTo(menu)  # Steam game / nothing running: no states
 
 
-def test_esc_quits_at_the_first_press(emu):
-    assert 'quit_press_twice = "false"' in retroarch.write_config(emu).read_text()
+def test_esc_does_not_quit_the_game(emu):
+    text = retroarch.write_config(emu).read_text()
+    assert 'input_exit_emulator = "nul"' in text and "quit_press_twice" not in text
 
 
 def test_config_gives_player_one_the_virtual_controller(emu):
