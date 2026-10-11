@@ -156,7 +156,7 @@ class GameDetailPage(QWidget):
         self.facts.setText("\n".join(line for line in lines if line))
         self.main_button.setText("▶  Play" if g.installed else ("Downloading…" if self.downloading else "⬇  Download"))
         self.main_button.setEnabled(g.installed or not self.downloading)
-        self.uninstall_button.setVisible(g.installed)
+        self.uninstall_button.setVisible(g.installed and getattr(self.tab, "can_delete", True))
 
 
     def _favorite_text(self) -> None:

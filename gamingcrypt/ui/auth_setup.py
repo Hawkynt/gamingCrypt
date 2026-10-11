@@ -496,8 +496,16 @@ class AuthSetupWizard(QWidget):
         unlock["kdf"] = self.new_kdf
         unlock["volume"] = self.volume
         unlock["mount_point"] = self.mount_point
+        from gamingcrypt import users
+
+        # the volume's password changed: the other users' codes go on working (their key slots
+        # hang on a master key, see unlock/keyslots.py) - unless this is another volume altogether
+        if self.creating or self.first_start:
+            users.forget_codes(self.config)
+        elif not users.admin_code_changed(self.config, self.current_secret, self.new_secret):
+            self.users_lost_codes = True
         self.save(self.config)
-        sidecar.write_sidecar(self.volume, unlock)
+        users.write_sidecar(self.config)
         set_status(self.status, "Done")
         if self.creating:
             self.step = "done"

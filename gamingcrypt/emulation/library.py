@@ -15,14 +15,22 @@ DISC = re.compile(r"\s*[\(\[]\s*(?:disc|disk|cd)\s*(\d+)(?:\s*of\s*\d+)?\s*[\)\]
 EMU_APPID_BASE = 0x70000000  # far above any Steam app id
 
 
+OWN_FOLDERS = ("saves", "states")  # each user's own: what they saved in a game, and their save states
+
+
 @dataclass
 class EmulationPaths:
     root: Path  # <drive>/Emulation
+    # Who's playing (a user's id; "" = the admin). The admin's saves are where they always were
+    # (saves/, states/), another user's in users/<id>/ - the games, cores, covers are everybody's.
+    user: str = ""
 
     def __post_init__(self):
         self.root = Path(self.root)
 
     def __getattr__(self, name: str) -> Path:
+        if name in OWN_FOLDERS and self.__dict__.get("user"):
+            return self.root / "users" / self.__dict__["user"] / name
         if name in FOLDERS:
             return self.root / name
         raise AttributeError(name)
@@ -33,6 +41,8 @@ class EmulationPaths:
     def ensure(self) -> None:
         for folder in FOLDERS:
             (self.root / folder).mkdir(parents=True, exist_ok=True)
+        for folder in OWN_FOLDERS:
+            getattr(self, folder).mkdir(parents=True, exist_ok=True)
         for system in SYSTEMS:
             self.roms_for(system).mkdir(exist_ok=True)
 

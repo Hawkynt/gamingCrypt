@@ -48,8 +48,13 @@ def derive_password(secret: str, params: dict | None) -> str:
     """Map the entered secret to the VeraCrypt password. ``None`` = no KDF (legacy)."""
     if not params:
         return secret
-    if params.get("algorithm") != ALGORITHM:
-        raise KDFError(f"unsupported key derivation {params.get('algorithm')!r}")
+    return base64.urlsafe_b64encode(derive_key(secret, params)).rstrip(b"=").decode("ascii")
+
+
+def derive_key(secret: str, params: dict, dklen: int = DKLEN) -> bytes:
+    """scrypt of the secret with these parameters (the raw key)."""
+    if not params or params.get("algorithm") != ALGORITHM:
+        raise KDFError(f"unsupported key derivation {(params or {}).get('algorithm')!r}")
     try:
         salt = bytes.fromhex(params["salt"])
         n, r, p = int(params["n"]), int(params["r"]), int(params["p"])
@@ -57,6 +62,5 @@ def derive_password(secret: str, params: dict | None) -> str:
         raise KDFError(f"broken key derivation settings: {exc}") from exc
     if len(salt) < 8:
         raise KDFError("salt too short")
-    key = hashlib.scrypt(secret.encode("utf-8"), salt=salt, n=n, r=r, p=p,
-                         maxmem=2 * 128 * n * r + 2**20, dklen=DKLEN)
-    return base64.urlsafe_b64encode(key).rstrip(b"=").decode("ascii")
+    return hashlib.scrypt(secret.encode("utf-8"), salt=salt, n=n, r=r, p=p,
+                          maxmem=2 * 128 * n * r + 2**20, dklen=dklen)

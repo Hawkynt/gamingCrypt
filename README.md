@@ -35,6 +35,9 @@ touch and controller, and can boot the device straight into a SteamOS-like gamin
 
 - 🔐 **Encrypted game drive**: a VeraCrypt container or partition, unlocked with a PIN, password,
   swipe pattern or 5×5 tap pattern. First start can create the container for you.
+- 👥 **Users**: an admin and as many users as you add, each with a code of their own that
+  unlocks the same drive - chosen on the lock screen. Every user has their own Steam account
+  and settings, their own emulator saves and save states; only the admin can delete games.
 - 🎮 **Steam**: your whole library, downloads and uninstalls without Steam's dialogs, a download
   queue, Proton per game, store search, and several Steam accounts.
 - 🔎 **Filters**: all installed games by genre, platform and release year, sorted by name, date or last played.

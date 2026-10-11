@@ -1,4 +1,5 @@
-"""Start screen: unlock the VeraCrypt volume with the configured method."""
+"""Start screen: unlock the VeraCrypt volume with the configured method - where there are more
+users, first who it is (each has a code of their own, see gamingcrypt/users.py)."""
 
 from __future__ import annotations
 
@@ -18,10 +19,18 @@ class LockScreen(QWidget):
     accepted = Signal(str)  # the code that worked (for the after-sleep check, see unlock/verifier)
     power_requested = Signal(str)  # "shutdown" / "restart" / "boot:<UEFI entry>"
 
-    def __init__(self, unlocker: VeraCryptUnlocker, method: str, parent: QWidget | None = None):
+    def __init__(self, unlocker: VeraCryptUnlocker, method: str, parent: QWidget | None = None,
+                 users: list | None = None, unlocker_for=None, user_id: str | None = None):
+        """users: who can log in (users.User), shown to choose from when there's more than one;
+        unlocker_for(user) -> their unlocker. user_id: who is chosen at first."""
         super().__init__(parent)
         self.unlocker = unlocker
         self.busy = False
+        self.users = list(users or [])
+        self.unlocker_for = unlocker_for
+        self.user = next((u for u in self.users if u.id == user_id), self.users[0] if self.users else None)
+        if self.user is not None and unlocker_for is not None:
+            self.unlocker, method = unlocker_for(self.user), self.user.method
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(40, 30, 40, 30)
@@ -30,15 +39,30 @@ class LockScreen(QWidget):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
-        self.input = SecretInput(method)
-        self.method = self.input.method
-        self.subtitle = QLabel(f"Enter your {METHOD_LABELS[self.method]}")
+        # who: only where there's more than the admin
+        self.user_buttons: dict[str, QWidget] = {}
+        self.user_row = QWidget()
+        chooser = QHBoxLayout(self.user_row)
+        chooser.setContentsMargins(0, 0, 0, 0)
+        chooser.addStretch()
+        for user in self.users:
+            button = big_button(user.name, choice=True)
+            button.setChecked(user is self.user)
+            button.clicked.connect(lambda _c=False, u=user: self.choose_user(u))
+            chooser.addWidget(button)
+            self.user_buttons[user.id] = button
+        chooser.addStretch()
+        layout.addWidget(self.user_row)
+        self.user_row.setVisible(len(self.users) > 1)
+
+        self.subtitle = QLabel("")
         self.subtitle.setObjectName("subtitle")
         self.subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.subtitle)
-        self.input.secret_entered.connect(self._attempt)
-        self.input.invalid.connect(lambda msg: set_status(self.status, msg, error=True))
-        layout.addWidget(self.input, 1)
+        self.input_box = QVBoxLayout()
+        layout.addLayout(self.input_box, 1)
+        self.input = None
+        self._set_input(method)
 
         self.status = QLabel("")
         self.status.setObjectName("status")
@@ -68,6 +92,30 @@ class LockScreen(QWidget):
         layout.addLayout(power)
         self.other_system = None
         self.windows_button.hide()  # until another system was found
+
+    def _set_input(self, method: str) -> None:
+        """The pad for that method (each user has their own)."""
+        if self.input is not None:
+            self.input_box.removeWidget(self.input)
+            self.input.deleteLater()
+        self.input = SecretInput(method)
+        self.method = self.input.method
+        self.subtitle.setText(f"Enter your {METHOD_LABELS[self.method]}")
+        self.input.secret_entered.connect(self._attempt)
+        self.input.invalid.connect(lambda msg: set_status(self.status, msg, error=True))
+        self.input_box.addWidget(self.input, 1)
+
+    def choose_user(self, user) -> None:
+        if self.busy:
+            self.user_buttons[user.id].setChecked(user is self.user)
+            return
+        self.user = user
+        for user_id, button in self.user_buttons.items():
+            button.setChecked(user_id == user.id)
+        if self.unlocker_for is not None:
+            self.unlocker = self.unlocker_for(user)
+        self._set_input(user.method)
+        set_status(self.status, "")
 
     def set_systems(self, entries) -> None:
         """Offer the first other system (Windows preferred) - see system/boot.py."""

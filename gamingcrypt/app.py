@@ -118,7 +118,10 @@ class MainWindow(QMainWindow):
         self.system = system if system is not None else SystemControls()
         self.setWindowTitle("GamingCrypt")
         self.config = config
-        self.save = save
+        from gamingcrypt import users
+
+        # written without what's only for now (who is logged in), a user's Steam settings with the user
+        self.save = lambda cfg: save(users.persistable(cfg))
         self.unlocker_factory = unlocker_factory
         self.page_factory = page_factory
         self.stack = QStackedWidget()
@@ -147,7 +150,9 @@ class MainWindow(QMainWindow):
         found = sidecar.find_container(self.config["unlock"])
         if not found:
             return False
-        self.config["unlock"].update(found)
+        from gamingcrypt import users
+
+        users.adopt(self.config, found)  # (its users too, where there are some)
         self.save(self.config)
         return True
 
@@ -396,7 +401,10 @@ class MainWindow(QMainWindow):
         if self.sleep_lock is not None:
             return
         log.info("locking after sleep")
-        lock = self.sleep_lock = LockScreen(VerifyUnlocker(self.verifier), self.config["unlock"]["method"], self)
+        from gamingcrypt import users
+
+        # whoever is logged in: their code
+        lock = self.sleep_lock = LockScreen(VerifyUnlocker(self.verifier), users.current(self.config).method, self)
         lock.setAutoFillBackground(True)
         lock.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         lock.unlocked.connect(self._sleep_unlocked)
@@ -491,10 +499,50 @@ class MainWindow(QMainWindow):
         if self.game_watcher.active and self.game_watcher.phase == "playing":
             self.step_aside("game")  # back to the game
 
+    def logged_in(self, user, secret: str) -> None:
+        """The lock screen took this user's code: the device is theirs until it's locked."""
+        from gamingcrypt import users
+
+        user = users.enter(self.config, user.id if user is not None else None)
+        log.info("unlocked by %s", "the admin" if user.admin else "a user")
+        if self.config.get("last_user") != user.id and len(users.all_users(self.config)) > 1:
+            self.config["last_user"] = user.id  # chosen on the lock screen the next time
+            self.save(self.config)
+        self.remember_code(secret)
+
+    def use_own_steam_account(self, service) -> None:
+        """More users, each with a Steam account of their own (chosen in Settings -> Games): Steam
+        is switched to the one of who just logged in."""
+        from gamingcrypt import users
+
+        wanted = self.config["steam"].get("account")
+        if not wanted or service is None or not hasattr(service, "accounts") \
+                or len(users.all_users(self.config)) < 2:
+            return
+
+        def work():
+            account = next((a for a in service.accounts() if a.steam_id == wanted), None)
+            if account is None or account.most_recent:
+                return None  # already theirs (or not on this device any more)
+            ok, message = service.switch_account(account)
+            return f"Steam: {account.persona}" if ok else message
+
+        run_async(work, lambda text: self.notify(text, "👤") if text else None, lambda _e: None, owner=self)
+
+    def is_admin_code(self, secret: str) -> bool:
+        """Is that the code the admin unlocked with (this session)? For the first user that's added:
+        nothing else says whether the admin's code is right."""
+        from gamingcrypt.unlock import verifier
+
+        return bool(self.verifier) and self.verifier.get("user", "admin") == "admin" \
+            and verifier.check(self.verifier, secret)
+
     def remember_code(self, secret: str) -> None:
+        from gamingcrypt import users
         from gamingcrypt.unlock import verifier
 
         self.verifier = verifier.make(secret)
+        self.verifier["user"] = users.current(self.config).id  # (a restart of GamingCrypt keeps who it is)
         try:
             verifier.save(self.verifier, self.verifier_path)
         except OSError as exc:
@@ -1422,9 +1470,14 @@ class MainWindow(QMainWindow):
         if not mode.in_gaming_session() or not mode.consume_resume_token():
             return False
         try:
-            return self.unlocker_factory(self.config["unlock"]).is_mounted()
+            mounted = self.unlocker_factory(self.config["unlock"]).is_mounted()
         except Exception:  # noqa: BLE001 - when in doubt: lock screen
             return False
+        if mounted:
+            from gamingcrypt import users
+
+            users.enter(self.config, (self.verifier or {}).get("user"))  # who was logged in
+        return mounted
 
     def desktop_mode(self) -> None:
         """In the gaming session: switch to the desktop (tileWin); otherwise just quit."""
@@ -1616,10 +1669,16 @@ class MainWindow(QMainWindow):
         self.screen_name = "setup"
 
     def show_lock(self) -> None:
-        lock = LockScreen(self.unlocker_factory(self.config["unlock"]), self.config["unlock"]["method"])
+        from gamingcrypt import users
+
+        users.leave(self.config)  # locked: nobody's logged in
+        everyone = users.all_users(self.config)
+        lock = LockScreen(self.unlocker_factory(self.config["unlock"]), self.config["unlock"]["method"],
+                          users=everyone, user_id=self.config.get("last_user"),
+                          unlocker_for=lambda user: users.unlocker_for(self.config, user, self.unlocker_factory))
         lock.unlocked.connect(self.show_shell)
         lock.power_requested.connect(self.power_action)
-        lock.accepted.connect(self.remember_code)
+        lock.accepted.connect(lambda secret: self.logged_in(lock.user, secret))
         self.load_other_systems(lock)
         self._replace(lock)
         self.screen_name = "lock"
@@ -1630,7 +1689,8 @@ class MainWindow(QMainWindow):
         pages.setdefault("Settings", SettingsTab(self.config, self.save, self.unlocker_factory, self.system,
                                                  steam_service=getattr(games, "service", None),
                                                  input_service=self.input_service,
-                                                 restart_gaming=self.restart_gaming_mode))
+                                                 restart_gaming=self.restart_gaming_mode,
+                                                 admin_check=self.is_admin_code))
         service = getattr(games, "service", None)
         if service is not None:
             # Steam windows (store, Steam's own dialogs) would open *behind* the fullscreen launcher.
@@ -1660,6 +1720,7 @@ class MainWindow(QMainWindow):
             if hasattr(pages.get(name), "player_launcher"):
                 pages[name].player_launcher = self.launch_movie
         self.shell = Shell(pages, show_hints=in_gaming_session())
+        self.use_own_steam_account(service)
         theme.on_change(self.retheme)
         self.shell.exit_requested.connect(self.desktop_mode)
         self.shell.power_requested.connect(self.power_action)
@@ -1868,8 +1929,10 @@ def default_pages(config: dict) -> dict[str, QWidget]:
     emulation_root = os.path.join(mount_point, "Emulation") if mount_point else ""
     windows_root = os.path.join(mount_point, "Windows Games") if mount_point else ""
     linux_root = os.path.join(mount_point, "Linux Games") if mount_point else ""
+    from gamingcrypt import users
+
     games = GamesTab(service, library_path=library_path, library_settings=libraries, emulation_root=emulation_root,
-                     windows_root=windows_root, linux_root=linux_root)
+                     windows_root=windows_root, linux_root=linux_root, user=users.current(config))
     from gamingcrypt.emulation import cores, retroarch
 
     if retroarch.available():

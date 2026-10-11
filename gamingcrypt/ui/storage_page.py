@@ -17,8 +17,10 @@ class StoragePage(QWidget):
     roms_changed = Signal()  # an emulated game was removed: the Games tab rescans
 
     def __init__(self, service_fn: Callable[[], object], games_running: Callable[[], set] = running.running_appids,
-                 parent: QWidget | None = None, emulation_fn: Callable[[], object] | None = None):
+                 parent: QWidget | None = None, emulation_fn: Callable[[], object] | None = None,
+                 can_delete: Callable[[], bool] | None = None):
         super().__init__(parent)
+        self.can_delete = can_delete or (lambda: True)  # deleting games is the admin's
         self.service_fn = service_fn
         self.emulation_fn = emulation_fn or (lambda: None)
         self.games_running = games_running
@@ -117,6 +119,8 @@ class StoragePage(QWidget):
             self.grid.addWidget(text, row, 0)
             self.grid.addWidget(shaders, row, 1)
             self.grid.addWidget(remove, row, 2)
+            if not self.can_delete():
+                remove.hide()  # deleting games is the admin's
             self.rows[game.appid] = [text, shaders, remove]
 
     # emulated games ---------------------------------------------------------------------------
@@ -151,12 +155,16 @@ class StoragePage(QWidget):
             remove.clicked.connect(lambda _c=False, g=game, r=row: self.ask_remove(g, r))
             self.rom_grid.addWidget(text, row * 2, 0)
             self.rom_grid.addWidget(remove, row * 2, 2)
+            if not self.can_delete():
+                remove.hide()
             self.rom_rows[game.appid] = [text, remove]
 
     def ask_remove(self, game, row: int) -> None:
         """The same question as on the game's page: really? and the saves too?"""
         from gamingcrypt.ui.remove_rom import RemoveConfirm
 
+        if not self.can_delete():
+            return
         if game.appid in self.games_running():
             set_status(self.status, "Close the game first", error=True)
             return
@@ -204,6 +212,8 @@ class StoragePage(QWidget):
         self._work(lambda: storage.clear_leftovers(report), lambda f: f"Freed {format_size(f)}")
 
     def uninstall(self, game: storage.GameSpace) -> None:
+        if not self.can_delete():
+            return
         from gamingcrypt.ui.modal import ask
 
         ask(self.window(), f"Uninstall {game.name}?\nIts game files are deleted from the drive "

@@ -303,6 +303,7 @@ class WindowsGamePage(QWidget):
         self.remove_button = big_button("🗑 Remove", "danger")
         self.remove_button.clicked.connect(self.ask_remove)
         options.addWidget(self.remove_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.remove_button.setVisible(getattr(tab, "can_delete", True))  # the admin's
         self.options_layout = options
         from gamingcrypt.ui.options_popup import options_popup
 

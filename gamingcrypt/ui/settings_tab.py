@@ -96,6 +96,7 @@ class SettingsTab(QStackedWidget):
         bluetooth=None,
         ssh=None,
         drive_share=None,
+        admin_check=None,
     ):
         super().__init__(parent)
         self.config = config
@@ -228,6 +229,13 @@ class SettingsTab(QStackedWidget):
         self.reset_button = big_button("Reset authentication method", "primary")
         self.reset_button.clicked.connect(self.start_reset)
         layout.addWidget(self.reset_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        from gamingcrypt import users
+        from gamingcrypt.ui.users_page import UsersSection
+
+        # the volume's own code (and which volume) is the admin's business
+        self.reset_button.setVisible(users.current(config).admin)
+        self.users_section = UsersSection(self, admin_check)
+        layout.addWidget(self.users_section)
         # lock after sleep (gaming mode: the power button suspends)
         row = QHBoxLayout()
         caption = QLabel("Lock after sleep")
@@ -251,7 +259,8 @@ class SettingsTab(QStackedWidget):
         from gamingcrypt.ui.storage_page import StoragePage
 
         layout = page("Storage")
-        self.storage_page = StoragePage(lambda: self.steam, emulation_fn=self.emulation_paths)
+        self.storage_page = StoragePage(lambda: self.steam, emulation_fn=self.emulation_paths,
+                                        can_delete=lambda: users.current(self.config).can_delete_games)
         layout.addWidget(self.storage_page)
         layout.addStretch()
 
@@ -305,7 +314,11 @@ class SettingsTab(QStackedWidget):
 
         mount = os.path.expanduser(self.config.get("unlock", {}).get("mount_point", "") or "")
         root = Path(mount) / "Emulation" if mount else None
-        return EmulationPaths(root) if root is not None and (root / "roms").is_dir() else None
+        from gamingcrypt import users
+
+        me = users.current(self.config)
+        return (EmulationPaths(root, "" if me.admin else me.id)
+                if root is not None and (root / "roms").is_dir() else None)
 
     def controller_test_options(self) -> dict:
         """Per-system button meanings and layouts (emulated systems)."""
@@ -426,6 +439,8 @@ class SettingsTab(QStackedWidget):
         if page is getattr(self.wifi_section, "password_page", None):
             self.wifi_section.close_password("")
             return True
+        if getattr(page, "busy", False):
+            return True  # (a user's code is being set: not left in the middle)
         self.close_page("")
         return True
 
@@ -489,12 +504,16 @@ class SettingsTab(QStackedWidget):
         for button in self.account_buttons.values():
             button.setEnabled(False)
         set_status(self.status, f"Switching to {account.persona} - Steam restarts…")
+        self._switching_to = account.steam_id
         run_async(lambda: self.steam.switch_account(account), self._switched,
                   lambda exc: self._switched((False, str(exc))), owner=self)
 
     def _switched(self, result) -> None:
         self.switching = False
         ok, message = result
+        if ok and getattr(self, "_switching_to", ""):
+            self.config["steam"]["account"] = self._switching_to  # whose it is (each user their own)
+            self.save(self.config)
         self.refresh()
         set_status(self.status, message, error=not ok)
 

@@ -334,6 +334,7 @@ class RomGamePage(QWidget):
         self.remove_button = big_button("🗑 Remove", "danger")
         self.remove_button.clicked.connect(self.ask_remove)
         options.addWidget(self.remove_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.remove_button.setVisible(getattr(tab, "can_delete", True))  # the admin's
         self.options_layout = options
         self.confirm = None  # the "really remove?" question
         from gamingcrypt.ui.options_popup import options_popup
@@ -378,7 +379,7 @@ class RomGamePage(QWidget):
         """Ask again - and whether the save states and memory card go too."""
         from gamingcrypt.ui.remove_rom import RemoveConfirm
 
-        if self.confirm is not None or self.tab.emulation is None:
+        if self.confirm is not None or self.tab.emulation is None or not getattr(self.tab, "can_delete", True):
             return
         self.confirm = RemoveConfirm(self.tab.emulation, self.game)
         self.confirm.cancelled.connect(self.close_confirm)

@@ -572,14 +572,17 @@ class GamesTab(QStackedWidget):
 
     def __init__(self, service, library_path: str = "", parent: QWidget | None = None,
                  library_settings: dict | None = None, emulation_root: str = "", windows_root: str = "",
-                 linux_root: str = ""):
+                 linux_root: str = "", user=None):
+        """user: who's using the device (users.User) - None: the admin."""
         super().__init__(parent)
         self.service = service
+        self.user = user
         # shared with the config: Settings changes it, apply_libraries() shows it
         self.library_settings = library_settings if library_settings is not None else {"hidden": []}
         from gamingcrypt.emulation.library import EmulationPaths
 
-        self.emulation = EmulationPaths(emulation_root) if emulation_root else None
+        own = "" if user is None or user.admin else user.id  # (the admin's saves: where they always were)
+        self.emulation = EmulationPaths(emulation_root, own) if emulation_root else None
         from gamingcrypt.emulation.covers import Covers
 
         from gamingcrypt.emulation.names import Names
@@ -653,6 +656,11 @@ class GamesTab(QStackedWidget):
             self.home.show_notice("")
 
     # navigation -------------------------------------------------------------
+    @property
+    def can_delete(self) -> bool:
+        """Deleting games (uninstalling, removing) is the admin's."""
+        return self.user is None or self.user.can_delete_games
+
     def push(self, page: QWidget) -> None:
         # remember what was selected, so "back" can select it again
         self._came_from.append(self.window().focusWidget() if self.window() else None)

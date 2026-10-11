@@ -106,6 +106,8 @@ def write_config(paths: EmulationPaths, extra: dict[str, str] | None = None) -> 
         "input_player1_reserved_device": VIRTUAL_PAD, "input_player1_device_reservation_type": "1",
     }
     settings.update(extra or {})
+    for folder in (paths.saves, paths.states):  # (a user's own: not there before their first game)
+        Path(folder).mkdir(parents=True, exist_ok=True)
     path = paths.config / "gamingcrypt.cfg"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("".join(f'{key} = "{value}"\n' for key, value in settings.items()))

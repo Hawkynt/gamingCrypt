@@ -79,6 +79,9 @@ DEFAULTS: dict[str, Any] = {
         # Optional: Steam Web API key + SteamID64 to show the full library.
         "api_key": "",
         "steam_id": "",
+        # The Steam account (SteamID64) chosen in Settings -> Games. With more users each has
+        # their own: Steam is switched to it when they log in.
+        "account": "",
         "country": "de",
         "language": "english",
         # Command used to talk to the Steam client. Empty = auto-detect.
