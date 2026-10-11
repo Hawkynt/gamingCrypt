@@ -321,16 +321,16 @@ def test_everything_fits_without_scrolling(menu):
         min_w, max_w, watts = 5, 28, 15
 
     m.set_performance(limit=Limit(), watts=15, fps=0, overlay=False, in_game=True)
-    m.set_emulated(True, (2.0, 0.5, "normal"))
+    m.set_emulated(True, 1.0)
     m.set_discs(3, 0)
     m.open_menu(0x70000001, "Final Fantasy VII - German Retranslation")
     m._test_host.grab()
     assert m.panel.verticalScrollBar().maximum() == 0
     assert not QScroller.hasScroller(m.panel.viewport())  # flick-scrolling would swallow taps
     viewport = m.panel.viewport().rect()
-    for button in [m.back_button, *m.speed_buttons.values(), m.disc_next, m.lock_button, m.quit_button]:
+    for button in [m.back_button, m.speed, m.disc_next, m.lock_button, m.quit_button]:
         r = button.rect().translated(button.mapTo(m.panel.viewport(), button.rect().topLeft()))
-        assert viewport.contains(r), button.text()
+        assert viewport.contains(r), button
 
 
 def test_opens_at_the_top(qtbot, menu):
@@ -344,16 +344,31 @@ def test_opens_at_the_top(qtbot, menu):
     assert bar.value() == 0
 
 
-def test_tapping_the_speed(qtbot, menu):
-    from PySide6.QtCore import Qt
+def test_the_speed_slider(qtbot, menu, monkeypatch):
+    """One slider from 0.1x to 10x; what it rests on is the speed (the D-pad passes others on its way)."""
+    from gamingcrypt.emulation.retroarch import SPEEDS
 
+    monkeypatch.setattr(qm, "SPEED_SETTLE_MS", 20)
     m, *_ = menu
-    m.set_emulated(True, (2.0, 0.5, "normal"))
+    m.set_emulated(True, 1.0)
     m.open_menu(0x70000001, "Mario")
+    assert m.speed_row.isVisibleTo(m) and m.speed_value.text() == "1x"
+    assert (m.speed.minimum(), m.speed.maximum()) == (0, len(SPEEDS) - 1)
     chosen = []
-    m.speed_mode_chosen.connect(chosen.append)
-    qtbot.mouseClick(m.speed_buttons["fast"], Qt.MouseButton.LeftButton)
-    assert chosen == ["fast"] and m.speed_buttons["fast"].isChecked()
+    m.speed_chosen.connect(chosen.append)
+    for step in (1, 2, 3):
+        m.speed.setValue(SPEEDS.index(1.0) + step)
+    assert m.speed_value.text() == "2x" and chosen == []  # shown right away, applied when it rests
+    qtbot.waitUntil(lambda: chosen == [2.0])
+    m.speed.setValue(0)
+    m.close_menu()  # chosen and left right away: it still counts
+    assert chosen == [2.0, 0.1]
+    m.set_emulated(True, 3.0)  # the next time: where the game is
+    assert m.speed_value.text() == "3x" and chosen == [2.0, 0.1]
+    m.set_speed_busy(True, "Changing the speed to 4x…")
+    assert not m.speed.isEnabled() and "4x" in m.status.text()
+    m.set_speed_busy(False)
+    assert m.speed.isEnabled() and m.status.text() == ""
 
 
 def test_state_buttons_ask_for_the_slots(menu):
@@ -362,7 +377,7 @@ def test_state_buttons_ask_for_the_slots(menu):
     m.states_requested.connect(asked.append)
     m.closed.connect(lambda: closed.append(True))
     for button in (m.save_state_button, m.load_state_button):
-        m.set_emulated(True)
+        m.set_emulated(True, 1.0)
         m.open_menu(0x70000001, "Mario")
         button.click()
         assert not m.isVisible()

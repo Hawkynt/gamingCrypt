@@ -635,7 +635,7 @@ def test_quick_menu_moves_as_it_looks(qtbot):
                      battery_reader=lambda: BatteryState(64, False, False))
     window.nav_root = lambda: menu
     menu.set_performance(limit=PowerLimit(15, 5, 28, "test"), fps=0, overlay=False, in_game=True)
-    menu.set_emulated(True, (2.0, 0.5, "normal"))
+    menu.set_emulated(True, 1.0)
     menu.set_discs(3, 1)
     menu.open_menu(0x70000001, "Final Fantasy VII")
     qtbot.waitExposed(window)
@@ -649,9 +649,10 @@ def test_quick_menu_moves_as_it_looks(qtbot):
     nav.focus(menu.screenshot_button)
     assert go(0, 1) is menu.load_state_button  # straight down: the right one under the right one
     assert go(0, 1) is menu.controls_button
-    assert go(0, 1) is menu.speed_buttons["normal"]  # the middle one under the wide button
-    assert go(1, 0) is menu.speed_buttons["fast"]
-    assert go(1, 0) is menu.speed_buttons["fast"]  # the right edge: stays
+    assert go(0, 1) is menu.speed
+    value = menu.speed.value()
+    assert go(1, 0) is menu.speed and menu.speed.value() == value + 1  # the slider: one speed on
+    menu.speed_settle.stop()
     assert go(0, 1) is menu.disc_next
     assert go(-1, 0) is menu.disc_prev
     assert go(0, 1) is menu.quit_button

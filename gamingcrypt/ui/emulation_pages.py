@@ -372,7 +372,7 @@ class RomGamePage(QWidget):
         self.tab.back()  # the game is gone
 
     def _options(self) -> QGridLayout:
-        """Core, memory card, and how slow / fast the quick menu's speeds are (from the next start)."""
+        """Core, memory card, screen and shaders (from the next start)."""
         from PySide6.QtWidgets import QComboBox
 
         from gamingcrypt.emulation import layouts, retroarch
@@ -572,20 +572,6 @@ class RomGamePage(QWidget):
         self.core_combo.currentIndexChanged.connect(lambda _i: core_chosen_screen())
         core_chosen()
         core_chosen_screen()
-        self.speed_combos = {}
-        speeds = QHBoxLayout()
-        for key, label, values, default in (("slow_speed", "Slow", retroarch.SLOW_SPEEDS, retroarch.DEFAULT_SLOW),
-                                            ("fast_speed", "Fast", retroarch.FAST_SPEEDS, retroarch.DEFAULT_FAST)):
-            combo = QComboBox()
-            for value in values:
-                combo.addItem(f"{label} {value:g}x", value)
-            current = profile.get(key) if profile.get(key) in values else default
-            combo.setCurrentIndex(values.index(current))
-            combo.currentIndexChanged.connect(
-                lambda _i, k=key, c=combo, d=default: self.tab.profiles.set(
-                    appid, k, None if c.currentData() == d else c.currentData()))
-            speeds.addWidget(combo)
-            self.speed_combos[key] = combo
         # shaders: the system's, or the game's own (a page of their own, with a preview)
         self.shaders_button = big_button("")
         self.shaders_button.clicked.connect(self.open_shaders)
@@ -595,11 +581,6 @@ class RomGamePage(QWidget):
         grid.addWidget(caption, line, 0)
         grid.addWidget(self.shaders_button, line, 1, 1, 2)
         self.show_shaders()
-        caption = QLabel("Quick menu speeds")
-        caption.setObjectName("cardMeta")
-        line = grid.rowCount()
-        grid.addWidget(caption, line, 0)
-        grid.addLayout(speeds, line, 1, 1, 2)
         grid.setColumnStretch(3, 1)
         return grid
 

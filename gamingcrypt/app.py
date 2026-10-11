@@ -591,7 +591,7 @@ class MainWindow(QMainWindow):
             menu.screenshot.connect(self.take_screenshot)
             menu.states_requested.connect(self.open_states)
             menu.controls_requested.connect(self.open_running_controls)
-            menu.speed_mode_chosen.connect(self.set_speed_mode)
+            menu.speed_chosen.connect(self.set_speed)
             menu.disc_chosen.connect(self.set_disc)
         watcher = self.game_watcher
         appid = watcher.appid if watcher.active and watcher.phase in ("starting", "playing") else None
@@ -602,8 +602,8 @@ class MainWindow(QMainWindow):
         menu.set_performance(**self.performance_state(appid))
         rom = self.running_rom() if appid is not None and appid >= EMU_APPID_BASE else None
         retroarch_game = rom is not None and rom.system.emulator == "retroarch"
-        speed = self.speed_rates(rom) + (getattr(self, "speed_mode", "normal"),) if retroarch_game else None
-        menu.set_emulated(retroarch_game, speed)
+        menu.set_emulated(retroarch_game, getattr(self, "speed", 1.0) if retroarch_game else None)
+        menu.set_speed_busy(getattr(self, "_speed_changing", False))
         menu.set_discs(len(rom.discs) if retroarch_game else 0, getattr(self, "disc_index", 0))
         menu.open_menu(appid, self.game_name(appid) if appid else "")
 
@@ -804,31 +804,36 @@ class MainWindow(QMainWindow):
     def launch_rom(self, game) -> tuple[bool, str]:
         """Play on an emulated game: RetroArch through the "reaper" script (see emulation/retroarch)."""
         from gamingcrypt.emulation import retroarch
-        from gamingcrypt.ui.tour import data_dir
 
         games = self.shell.pages.get("Games") if self.shell else None
         paths = getattr(games, "emulation", None)
         if paths is None:
             return False, "The games drive isn't unlocked"
-        from gamingcrypt.emulation import layouts
-        from gamingcrypt.emulation import shaders as shader_choice
-
         if game.system.emulator == "eden":
             ok, message = self.launch_switch(game, paths, games)
             if ok is None:
                 return True, message  # downloading Eden first
             return self._rom_started(game, games, ok, message, "Eden")
-        profile = self.game_profiles.get(game.appid)
-        core = profile.get("core")
-        from gamingcrypt.emulation import upscaling
-
-        scaler, resolution = upscaling.for_game(self.config, profile, game.system.id)  # its own, else its system's
+        core = self.game_profiles.get(game.appid).get("core")
         fetch = getattr(games, "core_fetcher", None)
         if fetch is not None and retroarch.available() and retroarch.find_core(paths, game.system, core) is None:
             return self.download_core_then_launch(game, paths, core, fetch)
+        ok, message = self.start_retroarch(game, paths)
+        return self._rom_started(game, games, ok, message, "RetroArch")
+
+    def start_retroarch(self, game, paths) -> tuple[bool, str]:
+        """RetroArch with the game and everything chosen for it (also again, for another speed)."""
+        from gamingcrypt.emulation import layouts, retroarch, upscaling
+        from gamingcrypt.emulation import shaders as shader_choice
+        from gamingcrypt.ui.tour import data_dir
+
+        profile = self.game_profiles.get(game.appid)
+        core = profile.get("core")
+        scaler, resolution = upscaling.for_game(self.config, profile, game.system.id)  # its own, else its system's
+        rates = self.speed_rates(game)
         ok, message = retroarch.launch(game, paths, data_dir(), config_mod.cache_dir() / "logs", core,
                                        layout=layouts.load(self.config, game.system.id), **dict(zip(
-                                           ("fast", "slow"), self.speed_rates(game))),
+                                           ("fast", "slow"), rates)),
                                        memory_card=profile.get("memory_card"),
                                        widescreen=profile.get("widescreen"),
                                        input_lag=profile.get("input_lag"), renderer=profile.get("renderer"),
@@ -837,9 +842,10 @@ class MainWindow(QMainWindow):
                                        scaler=scaler)
         if ok:
             self.follow_game_refresh(config_mod.cache_dir() / "logs" / retroarch.LOG_NAME)
-            self.speed_mode = "normal"  # RetroArch starts at normal speed
+            self.speed_mode, self.speed = "normal", 1.0  # RetroArch starts at normal speed
+            self.running_rates = rates  # what "fast" and "slow" mean until it's started again
             self.disc_index = retroarch.current_disc(paths, game, retroarch.find_core(paths, game.system, core))
-        return self._rom_started(game, games, ok, message, "RetroArch")
+        return ok, message
 
     # running speed of RetroArch games ----------------------------------------------------------
     def emulated_game_in_front(self) -> bool:
@@ -997,7 +1003,7 @@ class MainWindow(QMainWindow):
         return getattr(games, "rom_games", {}).get(appid) if appid is not None else None
 
     def speed_rates(self, game) -> tuple[float, float]:
-        """(fast, slow) of the game: chosen on its page, used from the next start."""
+        """(fast, slow) RetroArch is started with: what the quick menu's slider was on last."""
         from gamingcrypt.emulation import retroarch
 
         profile = self.game_profiles.get(game.appid) if game is not None else {}
@@ -1070,13 +1076,91 @@ class MainWindow(QMainWindow):
         if commands:
             self.notify(f"Disc {index + 1} is in", "💿")
 
-    def set_speed_mode(self, mode: str) -> None:
-        """Quick menu: slow / normal / fast - RetroArch's toggles, instantly."""
+    def set_speed(self, speed: float) -> None:
+        """Quick menu: how fast the game runs. Normal speed and the rates RetroArch was started
+        with are its own toggles (instant); it reads other rates only at its start - so the game
+        is saved, RetroArch started again with the rate, and the game put back where it was."""
         from gamingcrypt.emulation import retroarch
 
-        for command in retroarch.mode_commands(getattr(self, "speed_mode", "normal"), mode):
-            retroarch.send(command)
-        self.speed_mode = mode
+        rom = self.running_rom()
+        if rom is None or getattr(self, "_speed_changing", False) or speed == getattr(self, "speed", 1.0):
+            return
+        mode = retroarch.mode_of(speed)
+        fast, slow = getattr(self, "running_rates", self.speed_rates(rom))
+        if mode != "normal":  # the next start has it right away
+            default = retroarch.DEFAULT_FAST if mode == "fast" else retroarch.DEFAULT_SLOW
+            self.game_profiles.set(rom.appid, f"{mode}_speed", None if speed == default else speed)
+        if mode == "normal" or speed == (fast if mode == "fast" else slow):
+            for command in retroarch.mode_commands(getattr(self, "speed_mode", "normal"), mode):
+                retroarch.send(command)
+            self.speed_mode, self.speed = mode, speed
+            return
+        self.restart_at_speed(rom, speed)
+
+    def restart_at_speed(self, rom, speed: float) -> None:
+        import time
+
+        from gamingcrypt.emulation import retroarch, savestates
+        from gamingcrypt.steam.running import force_quit
+
+        games = self.shell.pages.get("Games") if self.shell else None
+        paths = getattr(games, "emulation", None)
+        if paths is None:
+            return
+        mode, appid = retroarch.mode_of(speed), rom.appid
+
+        def busy(on: bool, text: str = "") -> None:
+            self._speed_changing = on
+            menu = getattr(self, "quick_menu", None)
+            if menu is not None:
+                menu.set_speed_busy(on, text)
+                menu.show_speed(speed if on else getattr(self, "speed", 1.0))
+
+        def save_and_stop() -> bool:
+            if not savestates.capture(paths, rom, savestates.SPARE, retroarch.send):
+                return False
+            force_quit(appid)
+            return True
+
+        def stopped(saved: bool) -> None:
+            if not saved:  # a core without save states: nothing to come back to
+                busy(False)
+                self.notify(f"{speed:g}x from the next start - this game can't be saved while it runs", "⏩")
+                return
+            if getattr(self.running_rom(), "appid", None) != appid:
+                busy(False)
+                return  # ended meanwhile
+            ok, message = self.start_retroarch(rom, paths)  # within the watcher's patience: "it restarted itself"
+            if not ok:
+                busy(False)
+                self.notify(message, "⚠")
+                return
+            run_async(resume, resumed, lambda _e: resumed(False), owner=self)
+
+        def resume() -> bool:
+            deadline = time.monotonic() + 40
+            while not retroarch.playing():
+                if time.monotonic() > deadline:
+                    return False
+                time.sleep(0.25)
+            time.sleep(0.5)  # the first frames
+            retroarch.send(savestates.load_command(savestates.SPARE))
+            time.sleep(0.5)  # one command a frame; the state first
+            for command in retroarch.mode_commands("normal", mode):
+                retroarch.send(command)
+            return True
+
+        def resumed(ok: bool) -> None:
+            if ok:
+                self.speed_mode, self.speed = mode, speed
+            busy(False)
+            if not ok:
+                slot = savestates.rescue(paths, rom)
+                self.notify("The game didn't come back at the new speed" + (
+                    f" - where you were is in slot {slot + 1} of Load state" if slot is not None else ""), "⚠")
+
+        busy(True, f"Changing the speed to {speed:g}x…")
+        run_async(save_and_stop, stopped, lambda _e: stopped(False), owner=self)
 
     def launch_switch(self, game, paths, games) -> tuple[bool | None, str]:
         """Switch games: Eden - downloaded first when it isn't there yet (ok None: downloading)."""
@@ -1223,6 +1307,7 @@ class MainWindow(QMainWindow):
 
         if isinstance(getattr(self, "menu_page", None), SaveStatesPage):
             self.close_menu_page(reopen=False)  # its game is gone
+        self._speed_changing = False
         # Pages showing "Starting <game>…" must not keep saying so after the game.
         if self.shell is not None and appid is not None:
             for page in self.shell.findChildren(QWidget):

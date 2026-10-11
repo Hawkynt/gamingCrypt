@@ -1,5 +1,5 @@
 """Quick menu on the Windows button: audio devices, volume, brightness, refresh rate,
-force quit. In gaming mode GamingCrypt comes to the front for it while the game keeps
+force quit - and an emulated game's save states and speed. In gaming mode GamingCrypt comes to the front for it while the game keeps
 running behind (gamescope shows one app at a time) and steps aside again when it closes.
 """
 
@@ -20,6 +20,7 @@ from gamingcrypt.ui.widgets import big_button, set_status
 
 REFRESH_RATES = [40, 45, 50, 55, 60]
 KEEP_SECONDS = 15
+SPEED_SETTLE_MS = 600  # the speed is applied when the slider rests (the D-pad passes others on its way)
 
 
 def _combo() -> QComboBox:
@@ -43,7 +44,7 @@ class QuickMenu(QWidget):
     screenshot = Signal()
     states_requested = Signal(str)  # emulated game: the slots to "save" into / to "load"
     controls_requested = Signal()  # emulated game: its button layout
-    speed_mode_chosen = Signal(str)  # emulated game: slow / normal / fast, right away
+    speed_chosen = Signal(float)  # emulated game: 0.1 - 10 times as fast
     disc_chosen = Signal(int)  # emulated game on several discs: change to this one (0-based)
 
     def __init__(self, parent: QWidget, system: SystemControls,
@@ -188,18 +189,17 @@ class QuickMenu(QWidget):
         self.box.addWidget(row)
         self.controls_row = row
         row.hide()
-        speed = QWidget()
-        speed.setObjectName("menuRow")
-        line = QHBoxLayout(speed)
-        line.setContentsMargins(0, 0, 0, 0)
-        self.speed_buttons: dict[str, QWidget] = {}
-        for mode in ("slow", "normal", "fast"):
-            button = big_button(mode.capitalize(), choice=True)
-            button.clicked.connect(lambda _c=False, m=mode: self._speed_mode(m))
-            line.addWidget(button, 1)
-            self.speed_buttons[mode] = button
-        self.box.addWidget(speed)  # no caption: the three buttons need the width
-        self.speed_row = speed
+        from gamingcrypt.emulation.retroarch import SPEEDS
+
+        self.speed_value = QLabel()
+        self.speed = _slider(0, len(SPEEDS) - 1, SPEEDS.index(1.0))
+        self.speed.setPageStep(1)
+        _on_change(self.speed, lambda _v: self.speed_settle.start(SPEED_SETTLE_MS),
+                   lambda v: self.speed_value.setText(f"{SPEEDS[v]:g}x"))
+        self.speed_settle = QTimer(self)
+        self.speed_settle.setSingleShot(True)
+        self.speed_settle.timeout.connect(self._speed_rests)
+        self.speed_row = self._row("Speed", self.speed, self.speed_value)
         self.speed_row.hide()
         discs = QWidget()
         discs.setObjectName("menuRow")
@@ -246,7 +246,7 @@ class QuickMenu(QWidget):
                 [self.keep_button, self.revert_button], [self.power], [self.fps]]
         right = [[self.back_button], [self.overlay_button, self.screenshot_button],
                  [self.save_state_button, self.load_state_button], [self.controls_button],
-                 list(self.speed_buttons.values()), [self.disc_prev, self.disc_next], [self.quit_button],
+                 [self.speed], [self.disc_prev, self.disc_next], [self.quit_button],
                  [self.lock_button]]
         return [r for r in map(usable, left) if r], [r for r in map(usable, right) if r]
 
@@ -321,16 +321,26 @@ class QuickMenu(QWidget):
         self.screenshot_button.setVisible(in_game)
         self.tools_row.setVisible(overlay is not None or in_game)
 
-    def set_emulated(self, emulated: bool, speed: tuple[float, float, str] | None = None) -> None:
-        """RetroArch game: states, controls and the speed - (fast rate, slow rate, current mode)."""
+    def set_emulated(self, emulated: bool, speed: float | None = None) -> None:
+        """RetroArch game: states, controls and how fast it runs right now (1 = as the console)."""
         self.state_row.setVisible(emulated)
         self.controls_row.setVisible(emulated)
         self.speed_row.setVisible(emulated and speed is not None)
         if speed is not None:
-            fast, slow, mode = speed
-            self.speed_buttons["fast"].setText(f"Fast {fast:g}x")
-            self.speed_buttons["slow"].setText(f"Slow {slow:g}x")
-            self._show_speed_mode(mode)
+            self.show_speed(speed)
+
+    def show_speed(self, speed: float) -> None:
+        """The speed the game runs at - nothing is applied."""
+        from gamingcrypt.emulation.retroarch import SPEEDS
+
+        self.speed_settle.stop()
+        self._set_quietly(self.speed, SPEEDS.index(speed) if speed in SPEEDS else SPEEDS.index(1.0))
+        self.speed_value.setText(f"{SPEEDS[self.speed.value()]:g}x")
+
+    def set_speed_busy(self, busy: bool, text: str = "") -> None:
+        """While the game comes back at a new speed: no other one yet."""
+        self.speed.setEnabled(not busy)
+        set_status(self.status, text)
 
     def set_discs(self, count: int, current: int = 0) -> None:
         """A game on several discs: which one is in (0-based) - hidden for one disc."""
@@ -349,18 +359,18 @@ class QuickMenu(QWidget):
             self._show_disc(index)
             self.disc_chosen.emit(index)  # right away; the menu stays open
 
-    def _show_speed_mode(self, mode: str) -> None:
-        for name, button in self.speed_buttons.items():
-            button.setChecked(name == mode)
+    def _speed_rests(self) -> None:
+        from gamingcrypt.emulation.retroarch import SPEEDS
 
-    def _speed_mode(self, mode: str) -> None:
-        self._show_speed_mode(mode)
-        self.speed_mode_chosen.emit(mode)  # instant; the menu stays open
+        self.speed_chosen.emit(SPEEDS[self.speed.value()])  # the menu stays open
 
     def _leave_for_page(self) -> None:
         """Not close_menu: GamingCrypt stays in front for a page of its own over the game."""
         if self.countdown.isActive():
             self.revert_refresh()
+        if self.speed_settle.isActive():
+            self.speed_settle.stop()
+            self._speed_rests()
         self.battery_timer.stop()
         self.hide()
 
@@ -407,6 +417,9 @@ class QuickMenu(QWidget):
     def close_menu(self) -> None:
         if self.countdown.isActive():
             self.revert_refresh()  # leaving with an unconfirmed mode = revert
+        if self.speed_settle.isActive():
+            self.speed_settle.stop()
+            self._speed_rests()  # chosen and left right away: it still counts
         self.battery_timer.stop()
         self.hide()
         self.closed.emit()

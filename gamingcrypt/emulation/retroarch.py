@@ -119,8 +119,9 @@ def reaper(data_dir: Path) -> Path:
     return path
 
 
-FAST_SPEEDS = (1.25, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0)
-SLOW_SPEEDS = (0.1, 0.25, 0.5, 0.75)
+SPEEDS = (0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0)  # the quick menu's slider
+FAST_SPEEDS = tuple(s for s in SPEEDS if s > 1)
+SLOW_SPEEDS = tuple(s for s in SPEEDS if s < 1)
 DEFAULT_FAST, DEFAULT_SLOW = 2.0, 0.5
 MODES = ("slow", "normal", "fast")
 
@@ -129,6 +130,10 @@ def speed_settings(fast: float = DEFAULT_FAST, slow: float = DEFAULT_SLOW) -> di
     """The rates of fast-forward and slow motion (RetroArch reads them only at start; switching
     between slow / normal / fast is instant)."""
     return {"fastforward_ratio": f"{fast:g}", "slowmotion_ratio": f"{1 / slow:g}"}
+
+
+def mode_of(speed: float) -> str:
+    return "slow" if speed < 1 else "fast" if speed > 1 else "normal"
 
 
 def mode_commands(old: str, new: str) -> list[str]:
@@ -377,6 +382,19 @@ def content_fps(log: Path) -> float | None:
 def refresh_for(fps: float | None) -> int:
     """The screen refresh that shows the game evenly: 50 Hz for 50 fps games, else the default (0)."""
     return 50 if fps is not None and abs(fps - 50) < 0.5 else 0
+
+
+def playing(port: int = COMMAND_PORT, timeout: float = 0.3) -> bool:
+    """RetroArch answers and runs a game (not: still starting, or gone)."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.settimeout(timeout)
+        sock.sendto(b"GET_STATUS", ("127.0.0.1", port))
+        return sock.recv(4096).startswith(b"GET_STATUS PLAYING")
+    except OSError:
+        return False
+    finally:
+        sock.close()
 
 
 def send(command_text: str, port: int = COMMAND_PORT) -> bool:
