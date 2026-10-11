@@ -18,12 +18,9 @@ COLUMNS = 3
 CAPTION_H = 30
 
 
-def saved_text(saved_at: float, now: datetime | None = None) -> str:
-    """"Today 14:02", "Yesterday 09:30", "12 Oct 2026 18:45"."""
-    when, now = datetime.fromtimestamp(saved_at), now or datetime.now()
-    days = (now.date() - when.date()).days
-    day = "Today" if days == 0 else "Yesterday" if days == 1 else when.strftime("%d %b %Y")
-    return f"{day} {when:%H:%M}"
+def saved_text(saved_at: float) -> str:
+    """Date and time it was saved: "12 Oct 2026 · 18:45"."""
+    return f"{datetime.fromtimestamp(saved_at):%d %b %Y · %H:%M}"
 
 
 def placeholder(w: int, h: int, text: str, symbol: str = "") -> QPixmap:
@@ -56,7 +53,7 @@ class StateTile(Tappable):
         layout = QVBoxLayout(self)
         card_margins(layout)
         layout.setSpacing(4)
-        inner_w, inner_h = w - 20, h - 20 - CAPTION_H
+        inner_w, inner_h = w - 20, h - 26 - CAPTION_H  # the card's edge and padding, the gap to the caption
         self.picture = Cover()
         self.picture.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.picture.setFixedSize(inner_w, inner_h)
@@ -71,10 +68,16 @@ class StateTile(Tappable):
             pixmap = placeholder(inner_w, inner_h, "No picture", "💾")
         self.picture.setPixmap(pixmap)
         layout.addWidget(self.picture)
-        self.caption = QLabel(f"Slot {state.slot + 1}" + ("" if state.empty else f"  ·  {saved_text(state.saved_at)}"))
-        self.caption.setObjectName("cardMeta")
-        self.caption.setFixedHeight(CAPTION_H)
-        layout.addWidget(self.caption)
+        below = QHBoxLayout()  # under the picture: when it was saved, and which slot it is
+        below.setContentsMargins(0, 0, 0, 0)
+        self.when = QLabel("" if state.empty else saved_text(state.saved_at))
+        self.caption = QLabel(f"Slot {state.slot + 1}")
+        for label in (self.when, self.caption):
+            label.setObjectName("cardMeta")
+            label.setFixedHeight(CAPTION_H)
+        below.addWidget(self.when, 1)
+        below.addWidget(self.caption)
+        layout.addLayout(below)
 
 
 class SaveStatesPage(QWidget):

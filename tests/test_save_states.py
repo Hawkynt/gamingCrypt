@@ -188,10 +188,8 @@ def test_saved_text():
 
     from gamingcrypt.ui.save_states import saved_text
 
-    now = datetime(2026, 10, 12, 20, 0)
-    assert saved_text(datetime(2026, 10, 12, 14, 2).timestamp(), now) == "Today 14:02"
-    assert saved_text(datetime(2026, 10, 11, 23, 59).timestamp(), now) == "Yesterday 23:59"
-    assert saved_text(datetime(2026, 9, 1, 9, 5).timestamp(), now) == "01 Sep 2026 09:05"
+    assert saved_text(datetime(2026, 10, 12, 14, 2).timestamp()) == "12 Oct 2026 · 14:02"
+    assert saved_text(datetime(2026, 9, 1, 9, 5).timestamp()) == "01 Sep 2026 · 09:05"
 
 
 def test_three_by_three_with_pictures_and_placeholders(qtbot, host, emu, game):
@@ -212,8 +210,15 @@ def test_three_by_three_with_pictures_and_placeholders(qtbot, host, emu, game):
     assert with_picture.has_picture and not no_picture.has_picture and not empty.has_picture
     assert not no_picture.picture.pixmap().isNull() and not empty.picture.pixmap().isNull()  # a placeholder each
     assert no_picture.picture.pixmap().toImage() != empty.picture.pixmap().toImage()
-    assert "Slot 1" in with_picture.caption.text() and "Today" in no_picture.caption.text()
-    assert empty.caption.text() == "Slot 2"
+    from datetime import datetime
+
+    from gamingcrypt.ui.save_states import saved_text
+
+    assert with_picture.caption.text() == "Slot 1" and empty.caption.text() == "Slot 2"
+    # date and time of the save, below the picture
+    assert no_picture.when.text() == saved_text(no_picture.state.saved_at) and empty.when.text() == ""
+    assert f"{datetime.now():%Y}" in no_picture.when.text() and ":" in no_picture.when.text()
+    assert with_picture.when.geometry().top() >= with_picture.picture.geometry().bottom()
     assert [t.isEnabled() for t in page.tiles] == [True, False, False, False, True, False, False, False, False]
     assert page.first is no_picture  # the newest
     chosen, closed = [], []
