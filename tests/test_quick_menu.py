@@ -237,8 +237,31 @@ def test_windows_button_mid_game(qtbot, monkeypatch):
     menu.quit_button.click()
     open_modal(window, on_screen=False).content.action_button.click()
     qtbot.waitUntil(lambda: quit_ == [620])
+    assert w.quitting  # gone = over, without the wait for a game that restarts itself
     window.hardware_key(hotkeys.ACTION_CODES["quick_menu"])  # Windows button again: back to the game
     assert calls == ["aside", "back", "aside"] and not menu.isVisible()
+
+
+def test_force_quit_ends_the_game_right_away(qtbot, monkeypatch):
+    """The watcher is asked as soon as the processes are gone - not at its next look, plus a wait."""
+    from tests.test_game_running import Clock, Game, make_window
+
+    window, service, calls = make_window(qtbot, monkeypatch)
+    game, clock = Game(), Clock()
+    w = window.game_watcher
+    window.game_launched(620)
+    w.processes, w.gpu, w.clock = game.processes, game.gpu, clock
+    game.pids, game.drawing = {1}, True
+    w.poll()
+    clock.now += 2
+    w.poll()
+    w.timer.stop()  # no look by itself in this test
+    over = []
+    w.finished.connect(over.append)
+    monkeypatch.setattr("gamingcrypt.steam.running.force_quit", lambda appid: game.pids.clear())
+    window._force_quit(620)
+    qtbot.waitUntil(lambda: over == [620])
+    assert clock.now == 2 and not w.active  # no time passed
 
 
 def test_menu_closes_when_the_game_ends(qtbot, monkeypatch):

@@ -126,6 +126,29 @@ def test_watcher_game_restarting_itself_keeps_playing():
     assert events == ["started", "visible", "finished"]
 
 
+def test_force_quit_is_over_when_the_processes_are_gone():
+    """No waiting "in case it restarts itself" - that made Force quit take seconds longer."""
+    game, clock = Game(), Clock()
+    w, events = watcher_for(game, clock)
+    w.watch(620)
+    game.pids, game.drawing = {5}, True
+    w.poll()
+    clock.now += game_watcher.WINDOW_DELAY_S
+    w.poll()
+    w.expect_exit()
+    w.poll()
+    assert events == ["started", "visible"]  # still running: nothing yet
+    game.pids = set()
+    w.poll()
+    assert events == ["started", "visible", "finished"] and not w.active
+    w.watch(620)  # the next start is patient again
+    game.pids = {7}
+    w.poll()
+    game.pids = set()
+    w.poll()
+    assert w.active
+
+
 def test_watcher_steps_aside_without_gpu_after_fallback():
     game, clock = Game(), Clock()
     w, events = watcher_for(game, clock)

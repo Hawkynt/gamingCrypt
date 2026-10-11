@@ -685,7 +685,11 @@ class MainWindow(QMainWindow):
         from gamingcrypt.steam.running import force_quit
 
         log.info("force quitting app %s", appid)
-        run_async(lambda: force_quit(appid))  # the game watcher notices the exit and cleans up
+        watcher = self.game_watcher
+        if watcher.appid == appid:
+            watcher.expect_exit()  # no waiting "in case it restarts itself"
+        # the game watcher cleans up - asked right away, not at its next look
+        run_async(lambda: force_quit(appid), lambda _n: watcher.poll() if watcher.appid == appid else None, owner=self)
 
     def big_picture_opened(self) -> None:
         """Make room for Steam's Big Picture and come back when it's closed."""

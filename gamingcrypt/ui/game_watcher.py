@@ -98,6 +98,7 @@ class GameWatcher(QObject):
         self.seen_at = 0.0
         self.gpu_at: float | None = None
         self.gone_at: float | None = None
+        self.quitting = False
         log.info("waiting for app %s to start", appid)
         self.timer.start(timing.poll_ms)
 
@@ -122,7 +123,7 @@ class GameWatcher(QObject):
             if self.gone_at is None:
                 self.gone_at = now
                 log.info("app %s: no processes - waiting %ss in case it restarts", appid, self.timing.exit_grace_s)
-            if now - self.gone_at < self.timing.exit_grace_s:
+            if now - self.gone_at < self.timing.exit_grace_s and not getattr(self, "quitting", False):
                 return
             log.info("app %s exited", appid)
             self._stop()
@@ -146,6 +147,10 @@ class GameWatcher(QObject):
                 self.visible.emit(appid)
                 return
             self._report_phase(appid)
+
+    def expect_exit(self) -> None:
+        """Force quit: when its processes are gone the game is over - it isn't restarting itself."""
+        self.quitting = True
 
     def _report_phase(self, appid: int) -> None:
         if self.phase == "playing" or self.describe is None:

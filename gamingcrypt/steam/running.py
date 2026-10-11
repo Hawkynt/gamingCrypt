@@ -155,8 +155,8 @@ def force_quit(appid: int, proc: Path = Path("/proc"), kill=None, sleep=None, gr
 
     waited = 0.0
     while waited < grace_s and alive():
-        sleep(0.25)
-        waited += 0.25
+        sleep(0.1)
+        waited += 0.1
     for pid in alive() | game_processes(appid, proc):
         try:
             kill(pid, signal.SIGKILL)  # didn't listen - e.g. a frozen game
