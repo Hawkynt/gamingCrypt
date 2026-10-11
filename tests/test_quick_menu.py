@@ -32,6 +32,40 @@ def test_gamescope_dynamic_refresh_commands():
     assert gamescope_ctl.dynamic_refresh(unset) == 0
 
 
+def test_refresh_rate_goes_through_gamescopes_control_protocol():
+    """gamescope overwrites what the properties say on every frame - by them alone the screen's
+    rate never changed. Its one number is for the refresh rate and the FPS limit together."""
+    props, calls = {}, []
+
+    def run(cmd, **kw):
+        calls.append(cmd)
+        if cmd[0] == "xprop":
+            if "-set" in cmd:
+                props[cmd[-2]] = cmd[-1]
+            elif "-remove" in cmd:
+                props.pop(cmd[-1], None)
+            else:
+                value = props.get(cmd[-1])
+                return subprocess.CompletedProcess(cmd, 0, f"{cmd[-1]}(CARDINAL) = {value}\n" if value else "", "")
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    ctl = lambda: [c[-1] for c in calls if c[0] == "gamescopectl"]  # noqa: E731
+    assert gamescope_ctl.set_dynamic_refresh(50, run)
+    assert calls[0][0] == "xprop" and ["gamescopectl", "debug_set_fps_limit", "50"] in calls
+    assert gamescope_ctl.dynamic_refresh(run) == 50  # remembered
+    assert gamescope_ctl.set_fps_limit(30, run) and ctl() == ["50", "30"]  # the limit wins
+    assert gamescope_ctl.set_dynamic_refresh(40, run) and ctl()[-1] == "30"  # ... also over a new rate
+    assert gamescope_ctl.set_fps_limit(0, run) and ctl()[-1] == "40"  # no limit: the rate again
+    assert gamescope_ctl.set_dynamic_refresh(0, run) and ctl()[-1] == "0" and props == {}
+
+    def no_gamescopectl(cmd, **kw):
+        if cmd[0] == "gamescopectl":
+            raise FileNotFoundError(cmd[0])
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    assert gamescope_ctl.set_dynamic_refresh(45, no_gamescopectl)  # an older gamescope: the property
+
+
 def test_force_quit_terminates_then_kills(tmp_path):
     from gamingcrypt.steam import running
     from tests.test_launch_phase import proc_tree

@@ -1,8 +1,9 @@
 """Runtime controls of the running gamescope (X11 root window properties).
 
-GAMESCOPE_DYNAMIC_REFRESH changes the refresh rate of the internal screen
-without restarting gamescope (so a running game keeps running). Whether a rate
-is possible depends on the panel - hence the keep/revert question in the UI.
+The refresh rate of the internal screen changes without restarting gamescope (so a
+running game keeps running). Whether a rate is possible depends on the panel - hence
+the keep/revert question in the UI. gamescope has one knob for the refresh rate and
+the FPS limit together, see set_frame_target.
 
 Which app gamescope shows is steered like Steam does it on the Steam Deck: every
 window carries an app id (STEAM_GAME; games launched by Steam get theirs from
@@ -39,22 +40,45 @@ def _xprop(args: list[str], runner: Runner) -> subprocess.CompletedProcess | Non
         return None
 
 
-def dynamic_refresh(runner: Runner = subprocess.run) -> int:
-    """Current dynamic refresh rate (0 = gamescope's default)."""
-    result = _xprop([DYNAMIC_REFRESH], runner)
+def _number(name: str, runner: Runner) -> int:
+    result = _xprop([name], runner)
     if result is None or result.returncode != 0:
         return 0
     match = re.search(r"=\s*(\d+)", result.stdout)
     return int(match.group(1)) if match else 0
 
 
-def set_dynamic_refresh(hz: int, runner: Runner = subprocess.run) -> bool:
-    if hz:
-        args = ["-f", DYNAMIC_REFRESH, "32c", "-set", DYNAMIC_REFRESH, str(int(hz))]
-    else:
-        args = ["-remove", DYNAMIC_REFRESH]  # back to the default
+def _set_number(name: str, value: int, runner: Runner) -> bool:
+    args = ["-f", name, "32c", "-set", name, str(int(value))] if value else ["-remove", name]
     result = _xprop(args, runner)
     return result is not None and result.returncode == 0
+
+
+def set_frame_target(refresh: int, fps: int, runner: Runner = subprocess.run) -> bool:
+    """The screen's refresh rate and the FPS limit - one number for gamescope, as Steam sets it
+    on the Steam Deck: the screen goes to the highest rate of its panel the number divides (50:
+    50 Hz; 30: 60 Hz with every second frame) and games are held at the number. 0: the panel's own.
+
+    Through gamescope's control protocol: what the root window's properties say
+    (GAMESCOPE_DYNAMIC_REFRESH, GAMESCOPE_FPS_LIMIT) gamescope (3.16) overwrites with this
+    number on every frame - set by the properties alone, the refresh rate never changed and
+    games ran on at 60 with a limit of 30. An FPS limit wins: it's the one that's about the game."""
+    try:
+        ctl = runner(["gamescopectl", "debug_set_fps_limit", str(int(fps or refresh))], capture_output=True,
+                     text=True, timeout=5)
+        return ctl.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def dynamic_refresh(runner: Runner = subprocess.run) -> int:
+    """The refresh rate asked for last (0 = the panel's own) - kept in the root window's property."""
+    return _number(DYNAMIC_REFRESH, runner)
+
+
+def set_dynamic_refresh(hz: int, runner: Runner = subprocess.run) -> bool:
+    ctl = set_frame_target(hz, _number(FPS_LIMIT, runner), runner)
+    return _set_number(DYNAMIC_REFRESH, hz, runner) or ctl  # the property: older gamescopes, and to remember
 
 
 def set_window_appid(window: int, appid: int = LAUNCHER_APPID, runner: Runner = subprocess.run) -> bool:
@@ -99,24 +123,11 @@ def set_focus_order(appids: list[int], runner: Runner = subprocess.run) -> bool:
 
 
 def set_fps_limit(fps: int, runner: Runner = subprocess.run) -> bool:
-    """Frame limit for the game on screen (0 = none).
-
-    Through gamescope's control protocol, as Steam does it: gamescope (3.16) resets a limit set
-    with the GAMESCOPE_FPS_LIMIT property every frame - games ran at 60 with "30" on the
-    handheld. The property stays as the way for older gamescopes. On a fixed 60 Hz screen only
-    rates that divide 60 limit anything (30, 20 …)."""
-    try:
-        ctl = runner(["gamescopectl", "debug_set_fps_limit", str(int(fps))], capture_output=True, text=True,
-                     timeout=5)
-        ok = ctl.returncode == 0
-    except (OSError, subprocess.SubprocessError):
-        ok = False
-    if fps:
-        args = ["-f", FPS_LIMIT, "32c", "-set", FPS_LIMIT, str(int(fps))]
-    else:
-        args = ["-remove", FPS_LIMIT]
-    result = _xprop(args, runner)
-    return ok or (result is not None and result.returncode == 0)
+    """Frame limit for the game on screen (0 = none; then the refresh rate that was asked for
+    counts again). The property stays as the way for older gamescopes. On a fixed 60 Hz screen
+    only rates that divide 60 limit anything (30, 20 …)."""
+    ok = set_frame_target(_number(DYNAMIC_REFRESH, runner), fps, runner)
+    return _set_number(FPS_LIMIT, fps, runner) or ok
 
 
 # --- upscaling: a game on gamescope's second X server, at a lower resolution ------------------
