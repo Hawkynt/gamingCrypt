@@ -38,9 +38,15 @@ touch and controller, and can boot the device straight into a SteamOS-like gamin
 - 🎮 **Steam**: your whole library, downloads and uninstalls without Steam's dialogs, a download
   queue, Proton per game, store search, and several Steam accounts.
 - 🔎 **Filters**: all installed games by genre, platform and release year, sorted by name, date or last played.
+- ▶️ **Continue playing**: after a start you're on the main page with the game played last
+  highlighted - one press to play on.
 - 👾 **Emulation**: from NES to PS2, GameCube and Switch, through RetroArch and Eden. Cores and
-  covers are downloaded for you; shaders, upscaling, nine save states with a picture each and a
-  speed slider (0.1x to 10x) are included.
+  covers are downloaded for you; shaders and upscaling are included.
+- 💾 **Save states**: nine slots per game in a 3 by 3 grid, each with a picture of the moment,
+  the date and time it was saved and how long you had played up to it.
+- ⏩ **Speed**: a slider in the quick menu, from 0.1x to 10x, while the game runs.
+- ❓ **Not recognised?** A file with an unusual name (patched, translated, renamed) gets no cover,
+  genre or year by itself: choose the game from a list on its page, and the filters find it.
 - 🪟 **Windows and Linux games** outside Steam: copy the game folder onto the drive, pick its start
   file, and play it with Proton, Wine or natively.
 - 🖼️ **Wrong or missing picture?** Hold it (or **Options → Change picture**) to pick another one, for games, movies and shows.
@@ -51,6 +57,8 @@ touch and controller, and can boot the device straight into a SteamOS-like gamin
 - 🕹️ **Controller first**: console-style D-pad navigation, stick and trigger calibration, button
   remapping, and a quick menu (volume, brightness, refresh rate, FPS limit, Bluetooth, force quit)
   during games.
+- 📺 **Refresh rate**: changed while you play - from the quick menu, from Settings (no restart),
+  and by itself for 50 Hz games - on panels gamescope knows refresh rates for.
 - ⚙️ **Device settings**: resolution, refresh rate, brightness, power limit (TDP), audio devices.
 - 🌗 Dark and light theme.
 
