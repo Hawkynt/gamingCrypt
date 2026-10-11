@@ -354,3 +354,16 @@ def test_tapping_the_speed(qtbot, menu):
     m.speed_mode_chosen.connect(chosen.append)
     qtbot.mouseClick(m.speed_buttons["fast"], Qt.MouseButton.LeftButton)
     assert chosen == ["fast"] and m.speed_buttons["fast"].isChecked()
+
+
+def test_state_buttons_ask_for_the_slots(menu):
+    m, *_ = menu
+    asked, closed = [], []
+    m.states_requested.connect(asked.append)
+    m.closed.connect(lambda: closed.append(True))
+    for button in (m.save_state_button, m.load_state_button):
+        m.set_emulated(True)
+        m.open_menu(0x70000001, "Mario")
+        button.click()
+        assert not m.isVisible()
+    assert asked == ["save", "load"] and closed == []  # GamingCrypt stays in front

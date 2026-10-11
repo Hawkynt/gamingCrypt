@@ -95,6 +95,9 @@ def write_config(paths: EmulationPaths, extra: dict[str, str] | None = None) -> 
         "input_overlay_enable": "false", "input_overlay": "", "input_overlay_next": "nul",
         "input_overlay_next_btn": "nul", "input_overlay_next_axis": "nul",
         "savestate_auto_index": "false", "menu_driver": "ozone", "auto_remaps_enable": "true",
+        # save states: right in states/ (not a folder per core), each with a picture (emulation/savestates)
+        "savestate_thumbnail_enable": "true", "sort_savestates_enable": "false",
+        "sort_savestates_by_content_enable": "false", "savestates_in_content_dir": "false",
         "input_remapping_directory": paths.config / "remaps",
         # the physical pad is grabbed by the remapper: player 1 is the virtual one when it's there
         "input_joypad_driver": "udev", "joypad_autoconfig_dir": write_autoconfig(paths.config / "autoconfig"),

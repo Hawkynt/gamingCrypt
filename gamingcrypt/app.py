@@ -589,7 +589,7 @@ class MainWindow(QMainWindow):
             menu.power_chosen.connect(self.quick_power)
             menu.fps_chosen.connect(self.quick_fps)
             menu.screenshot.connect(self.take_screenshot)
-            menu.emulator_command.connect(self.emulator_command)
+            menu.states_requested.connect(self.open_states)
             menu.controls_requested.connect(self.open_running_controls)
             menu.speed_mode_chosen.connect(self.set_speed_mode)
             menu.disc_chosen.connect(self.set_disc)
@@ -1165,12 +1165,52 @@ class MainWindow(QMainWindow):
             page.deleteLater()
         self._quick_menu_closed()  # back to the game
 
-    def emulator_command(self, text: str) -> None:
-        """Quick menu: save / load state of the running emulated game."""
-        from gamingcrypt.emulation import retroarch
+    def open_states(self, mode: str) -> None:
+        """Quick menu: the running emulated game's nine save states - "save" into one or "load" one."""
+        from gamingcrypt.emulation import savestates
+        from gamingcrypt.ui.save_states import SaveStatesPage
 
-        if retroarch.send(text):
-            self.notify("State saved" if text == "SAVE_STATE" else "State loaded", "💾")
+        games = self.shell.pages.get("Games") if self.shell else None
+        rom, paths = self.running_rom(), getattr(games, "emulation", None)
+        if rom is None or paths is None:
+            self._quick_menu_closed()
+            return
+        page = SaveStatesPage(savestates.slots(paths, rom), mode, rom.name, parent=self)
+        page.chosen.connect(lambda slot: self.state_chosen(rom, paths, mode, slot))
+        self.show_menu_page(page)
+
+    def state_chosen(self, rom, paths, mode: str, slot: int) -> None:
+        from gamingcrypt.emulation import retroarch, savestates
+
+        self.close_menu_page(reopen=False)
+        self._quick_menu_closed()  # back into the game; RetroArch saves / loads right away
+        if mode == "load":
+            if retroarch.send(savestates.load_command(slot)):
+                self.notify("State loaded", "💾")
+            return
+        run_async(lambda: savestates.capture(paths, rom, slot, retroarch.send),
+                  lambda ok: self.notify(*(("State saved", "💾") if ok else
+                                           ("Couldn't save the state - this game can't be saved right now", "⚠"))),
+                  lambda _e: self.notify("Couldn't save the state", "⚠"), owner=self)
+
+    def show_menu_page(self, page) -> None:
+        """A page opened from the quick menu, over the game; leaving it goes back to the menu."""
+        self.close_menu_page(reopen=False)
+        self.menu_page = page
+        page.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        page.closed.connect(self.close_menu_page)
+        page.setGeometry(self.rect())
+        page.raise_()
+        page.show()
+
+    def close_menu_page(self, reopen: bool = True) -> None:
+        page, self.menu_page = getattr(self, "menu_page", None), None
+        if page is None:
+            return
+        page.hide()
+        page.deleteLater()
+        if reopen:
+            self.toggle_quick_menu()
 
     def game_over(self, appid: int | None = None, failed: bool = False) -> None:
         overlay = getattr(self, "game_volume_osd", None)
@@ -1179,6 +1219,10 @@ class MainWindow(QMainWindow):
         menu = getattr(self, "quick_menu", None)
         if menu is not None and menu.isVisible():
             menu.hide()  # the game is gone - nothing to go back to
+        from gamingcrypt.ui.save_states import SaveStatesPage
+
+        if isinstance(getattr(self, "menu_page", None), SaveStatesPage):
+            self.close_menu_page(reopen=False)  # its game is gone
         # Pages showing "Starting <game>…" must not keep saying so after the game.
         if self.shell is not None and appid is not None:
             for page in self.shell.findChildren(QWidget):
@@ -1351,9 +1395,10 @@ class MainWindow(QMainWindow):
         menu = getattr(self, "quick_menu", None)
         if menu is not None and menu.isVisible():
             return menu
-        controls = getattr(self, "controls_overlay", None)
-        if controls is not None and controls.isVisible():
-            return controls
+        for name in ("controls_overlay", "menu_page"):  # pages opened from the quick menu
+            page = getattr(self, name, None)
+            if page is not None and page.isVisible():
+                return page
         if self.launch_overlay.isVisible():
             return self.launch_overlay
         menu = getattr(self.shell, "power_menu", None) if self.shell is not None else None

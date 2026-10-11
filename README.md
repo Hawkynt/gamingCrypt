@@ -39,7 +39,8 @@ touch and controller, and can boot the device straight into a SteamOS-like gamin
   queue, Proton per game, store search, and several Steam accounts.
 - 🔎 **Filters**: all installed games by genre, platform and release year, sorted by name, date or last played.
 - 👾 **Emulation**: from NES to PS2, GameCube and Switch, through RetroArch and Eden. Cores and
-  covers are downloaded for you; shaders, upscaling and save states are included.
+  covers are downloaded for you; shaders, upscaling and nine save states with a picture each
+  are included.
 - 🪟 **Windows and Linux games** outside Steam: copy the game folder onto the drive, pick its start
   file, and play it with Proton, Wine or natively.
 - 🖼️ **Wrong or missing picture?** Hold it (or **Options → Change picture**) to pick another one, for games, movies and shows.

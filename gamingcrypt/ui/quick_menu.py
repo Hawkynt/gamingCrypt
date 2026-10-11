@@ -41,7 +41,7 @@ class QuickMenu(QWidget):
     power_chosen = Signal(int)  # watts: the running game's profile, or Settings without a game
     fps_chosen = Signal(int)
     screenshot = Signal()
-    emulator_command = Signal(str)  # RetroArch: SAVE_STATE / LOAD_STATE
+    states_requested = Signal(str)  # emulated game: the slots to "save" into / to "load"
     controls_requested = Signal()  # emulated game: its button layout
     speed_mode_chosen = Signal(str)  # emulated game: slow / normal / fast, right away
     disc_chosen = Signal(int)  # emulated game on several discs: change to this one (0-based)
@@ -170,9 +170,9 @@ class QuickMenu(QWidget):
         line = QHBoxLayout(row)
         line.setContentsMargins(0, 0, 0, 0)
         self.save_state_button = big_button("💾  Save state")
-        self.save_state_button.clicked.connect(lambda: self._emulator("SAVE_STATE"))
+        self.save_state_button.clicked.connect(lambda: self._states("save"))
         self.load_state_button = big_button("↺  Load state")
-        self.load_state_button.clicked.connect(lambda: self._emulator("LOAD_STATE"))
+        self.load_state_button.clicked.connect(lambda: self._states("load"))
         self.controls_button = big_button("🕹  Controls")
         self.controls_button.clicked.connect(self._controls)
         line.addWidget(self.save_state_button, 1)
@@ -357,15 +357,19 @@ class QuickMenu(QWidget):
         self._show_speed_mode(mode)
         self.speed_mode_chosen.emit(mode)  # instant; the menu stays open
 
-    def _emulator(self, command: str) -> None:
-        self.close_menu()  # back into the game; RetroArch saves / loads right away
-        self.emulator_command.emit(command)
-
-    def _controls(self) -> None:
+    def _leave_for_page(self) -> None:
+        """Not close_menu: GamingCrypt stays in front for a page of its own over the game."""
         if self.countdown.isActive():
             self.revert_refresh()
         self.battery_timer.stop()
-        self.hide()  # not close_menu: GamingCrypt stays in front for the controls page
+        self.hide()
+
+    def _states(self, mode: str) -> None:
+        self._leave_for_page()
+        self.states_requested.emit(mode)
+
+    def _controls(self) -> None:
+        self._leave_for_page()
         self.controls_requested.emit()
 
     def _overlay_toggled(self, on: bool) -> None:

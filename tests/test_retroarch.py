@@ -149,7 +149,8 @@ def test_play_and_quick_menu_states(qtbot, emu, monkeypatch, tmp_path):
     menu = window.quick_menu
     assert menu.state_row.isVisibleTo(menu)
     menu.save_state_button.click()
-    assert sent == ["SAVE_STATE"] and any("State saved" in t for t in window.toasts.shown + [x[1] for x in window.toasts.queue])
+    assert window.menu_page.mode == "save" and not menu.isVisible() and sent == []  # the slots first
+    window.close_menu_page(reopen=False)
     window.game_watcher._stop()
     window.toggle_quick_menu()
     window.toggle_quick_menu()
