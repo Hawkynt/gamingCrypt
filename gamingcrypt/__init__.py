@@ -1,3 +1,3 @@
 """GamingCrypt - a fullscreen touch launcher for Linux gaming handhelds."""
 
-__version__ = "1.0.8"
+__version__ = "1.0.9"
