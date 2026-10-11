@@ -36,6 +36,7 @@ def heading(text: str) -> QLabel:
 
 
 CONTINUE = "continue"  # in the hidden libraries: no Continue playing on the Games tab
+START_FOCUS_MS, START_FOCUS_TRIES = 250, 120  # the start's highlight waits this long for the page to be free
 
 
 class ContinueCard(QFrame):
@@ -173,6 +174,7 @@ class GamesHome(QWidget):
         self.search.setPlaceholderText("🔍  Search installed games")
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self.refresh_results)
+        self.search.textChanged.connect(lambda text: self.left_start() if text.strip() else None)
         header.addWidget(self.search)
         # filters of the installed games (genres and years from the store - see game_facts)
         from gamingcrypt import game_facts
@@ -198,7 +200,15 @@ class GamesHome(QWidget):
                            (self.decade_combo, "decade"), (self.sort_combo, "sort")):
             view_state.restore(combo, kept.get(key))
             combo.currentIndexChanged.connect(lambda _i: self.filters_changed())
+            combo.activated.connect(lambda _i: self.left_start())  # chosen by hand
             filters.addWidget(combo, 1)
+        # A fresh start: "Continue playing" is there - also over filters left on the last time - and
+        # the controller starts on its Play, until something is searched or filtered.
+        self.at_start = True
+        self.start_focus = QTimer(self)
+        self.start_focus.setInterval(START_FOCUS_MS)
+        self.start_focus.timeout.connect(self.focus_continue)
+        self.start_focus_tries = 0
         self.clear_button = big_button("✕  Clear filters")
         self.clear_button.clicked.connect(self.clear_filters)
         filters.addWidget(self.clear_button)
@@ -316,6 +326,7 @@ class GamesHome(QWidget):
             combo.blockSignals(True)
             combo.setCurrentIndex(0)
             combo.blockSignals(False)
+        self.left_start()
         self.filters_changed()
         self.genre_combo.setFocus()  # (the button is gone: the highlight stays in the row)
 
@@ -323,8 +334,45 @@ class GamesHome(QWidget):
         """Continue playing: when there's a game, nothing is searched, and it isn't switched off
         (Settings -> Games -> Libraries)."""
         wanted = CONTINUE not in self.tab.library_settings.get("hidden", [])
-        searching = self.narrowed()
+        searching = bool(self.search.text().strip()) or (self.filtering() and not self.at_start)
         self.continue_card.setVisible(wanted and not searching and self.continue_card.game is not None)
+        if self.at_start and self.continue_card.game is not None and not self.start_focus.isActive():
+            self.focus_continue()
+
+    def left_start(self) -> None:
+        """Something was searched or filtered: from here on the page is as always."""
+        if self.at_start:
+            self.at_start = False
+            self.start_focus.stop()
+            self.show_continue()
+
+    def focus_continue(self) -> None:
+        """After a start the controller is on "Continue playing" → Play: one press to play on.
+        Once - and not while something lies over the page (What's new, the tour) or it isn't up yet."""
+        card = self.continue_card
+        if not self.at_start or self.start_focus_tries < 0:
+            self.start_focus.stop()
+            return
+        window = self.window()
+        root = getattr(window, "nav_root", None)
+        covered = callable(root) and root() is not window
+        if self.tab.currentWidget() is not self:
+            self.start_focus_tries = -1  # already somewhere else: it's not a start any more
+            self.start_focus.stop()
+            return
+        if covered or not card.play_button.isVisibleTo(window) or not window.isVisible():
+            self.start_focus_tries += 1
+            if self.start_focus_tries > START_FOCUS_TRIES:
+                self.start_focus_tries = -1
+                self.start_focus.stop()
+            elif not self.start_focus.isActive():
+                self.start_focus.start()
+            return
+        self.start_focus.stop()
+        self.start_focus_tries = -1
+        from gamingcrypt.ui.widgets import focus_and_reveal
+
+        focus_and_reveal(card.play_button)
 
     def library_cards(self) -> dict:
         cards = {"favorites": self.favorites_card, "steam": self.steam_card, "recent": self.recent_card}
