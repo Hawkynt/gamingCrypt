@@ -139,10 +139,12 @@ class AppearanceSection(Section):
 
 class DisplaySection(Section):
     def __init__(self, controls: SystemControls, config: dict, save: Callable[[dict], None],
-                 restart_gaming: Callable[[], None] | None = None):
+                 restart_gaming: Callable[[], None] | None = None,
+                 set_refresh: Callable[[int], bool] | None = None):
         super().__init__("Display")
         self.controls, self.config, self.save = controls, config, save
         self.restart_gaming = restart_gaming
+        self.set_refresh = set_refresh
         self.backend = controls.display
         self.output = None
         self.previous = None
@@ -198,7 +200,8 @@ class DisplaySection(Section):
             self.row("Brightness", self.brightness_slider, self.brightness_value)
         self.body.addWidget(self.status)
 
-    # gaming mode: gamescope options, applied by restarting gaming mode -------------
+    # gaming mode: the refresh rate changes while gamescope runs, the resolution is one of its
+    # options (applied by restarting gaming mode) ------------------------------------------
     def _build_gamescope(self) -> None:
         from gamingcrypt.session import mode
 
@@ -215,24 +218,49 @@ class DisplaySection(Section):
         self.gs_refresh.addItem("Default (screen)", 0)
         for hz in mode.REFRESH_RATES:
             self.gs_refresh.addItem(f"{hz} Hz", hz)
-        self.gs_refresh.setCurrentIndex(max(0, self.gs_refresh.findData(current.get("refresh", 0))))
+        wanted_hz = current.get("refresh") or self.config["system"].get("gaming_refresh") or 0
+        self.gs_refresh.setCurrentIndex(max(0, self.gs_refresh.findData(wanted_hz)))
         self.row("Resolution", self.gs_resolution)
         self.row("Refresh rate", self.gs_refresh)
         actual = mode.actual_mode()
         self.body.addWidget(_label("Lower resolutions are upscaled to the screen: more FPS, less power."
                                    + (f" Screen right now: {actual}." if actual else "")))
-        self.gs_apply = big_button("Apply - restarts gaming mode", "primary")
+        self.gs_apply = big_button("Apply", "primary")
         self.gs_apply.clicked.connect(self.apply_gamescope)
+        self.gs_resolution.currentIndexChanged.connect(lambda _i: self._label_apply())
+        self._label_apply()
         self.body.addWidget(self.gs_apply, alignment=Qt.AlignmentFlag.AlignLeft)
+
+    def _needs_restart(self) -> bool:
+        """Another resolution - or a refresh rate still among gamescope's options (set before it
+        could be changed while gamescope runs): taken out of them once."""
+        from gamingcrypt.session import mode
+
+        native = mode.panel_size() or (1280, 800)
+        current = mode.parse_display(mode.read_args())
+        now = f"{current.get('width', native[0])}x{current.get('height', native[1])}"
+        return self.gs_resolution.currentData() != now or "refresh" in current
+
+    def _label_apply(self) -> None:
+        self.gs_apply.setText("Apply - restarts gaming mode" if self._needs_restart() else "Apply")
 
     def apply_gamescope(self) -> None:
         from gamingcrypt.session import mode
 
         w, h = (int(v) for v in self.gs_resolution.currentData().split("x"))
         native = mode.panel_size() or (1280, 800)
-        refresh = self.gs_refresh.currentData() or None
+        refresh = self.gs_refresh.currentData() or 0
+        self.config["system"]["gaming_refresh"] = refresh  # set again at every start (see app)
+        self.save(self.config)
+        if not self._needs_restart():
+            from gamingcrypt.system import gamescope_ctl
+
+            ok = (self.set_refresh or gamescope_ctl.set_dynamic_refresh)(refresh)
+            set_status(self.status, f"Refresh rate: {self.gs_refresh.currentText()}" if ok
+                       else "Could not change the refresh rate", error=not ok)
+            return
         size = (None, None) if (w, h) == native else (w, h)
-        mode.apply_display(size[0], size[1], refresh)
+        mode.apply_display(size[0], size[1], None)
         set_status(self.status, "Closing Steam and restarting gaming mode - you'll be asked to keep the "
                                 "new mode (it reverts after 15 s)")
         self.gs_apply.setEnabled(False)

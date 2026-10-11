@@ -582,7 +582,8 @@ class MainWindow(QMainWindow):
             from gamingcrypt.session.mode import in_gaming_session
             from gamingcrypt.ui.quick_menu import QuickMenu
 
-            menu = self.quick_menu = QuickMenu(self, self.system, refresh_available=in_gaming_session())
+            menu = self.quick_menu = QuickMenu(self, self.system, refresh_available=in_gaming_session(),
+                                               refresh_get=self.menu_refresh, refresh_set=self.set_menu_refresh)
             menu.closed.connect(self._quick_menu_closed)
             menu.force_quit.connect(self._force_quit)
             menu.lock_now.connect(self.panic_lock)
@@ -607,6 +608,22 @@ class MainWindow(QMainWindow):
         menu.set_speed_busy(getattr(self, "_speed_changing", False))
         menu.set_discs(len(rom.discs) if retroarch_game else 0, getattr(self, "disc_index", 0))
         menu.open_menu(appid, self.game_name(appid) if appid else "")
+
+    def default_refresh(self) -> int:
+        """The screen's refresh rate from Settings (0: the panel's own)."""
+        return int(self.config["system"].get("gaming_refresh") or 0)
+
+    def menu_refresh(self) -> int:
+        """What the quick menu shows: 0 ("Default") while it's the rate from Settings."""
+        from gamingcrypt.system import gamescope_ctl
+
+        hz = gamescope_ctl.dynamic_refresh()
+        return 0 if hz == self.default_refresh() else hz
+
+    def set_menu_refresh(self, hz: int) -> bool:
+        from gamingcrypt.system import gamescope_ctl
+
+        return gamescope_ctl.set_dynamic_refresh(hz or self.default_refresh())
 
     def performance_state(self, appid: int | None) -> dict:
         from gamingcrypt.session.mode import in_gaming_session
@@ -1049,7 +1066,7 @@ class MainWindow(QMainWindow):
             elif hz != self._refresh_set:
                 log.info("screen at %s Hz for the game", hz or "the default")
                 self._refresh_set = hz
-                run_async(lambda: gamescope_ctl.set_dynamic_refresh(hz), owner=self)
+                run_async(lambda: gamescope_ctl.set_dynamic_refresh(hz or self.default_refresh()), owner=self)
 
         run_async(work, done, owner=self)
 
@@ -1061,7 +1078,7 @@ class MainWindow(QMainWindow):
             timer.stop()
         if getattr(self, "_refresh_set", 0):
             self._refresh_set = 0
-            run_async(lambda: gamescope_ctl.set_dynamic_refresh(0), owner=self)
+            run_async(lambda: gamescope_ctl.set_dynamic_refresh(self.default_refresh()), owner=self)
 
     def set_disc(self, index: int) -> None:
         """Quick menu: change discs - open the tray, step to the disc, close it."""
@@ -1968,6 +1985,11 @@ def reset_upscaling_in_gaming_mode(window) -> None:
     if in_gaming_session() and upscaling.available():
         screen = window.screen_size()
         run_async(lambda: upscaling.stop(screen), owner=window, pool=window._power_pool)
+    if in_gaming_session():  # the refresh rate from Settings: gamescope starts at the panel's own
+        from gamingcrypt.system import gamescope_ctl
+
+        hz = window.default_refresh()
+        run_async(lambda: gamescope_ctl.set_dynamic_refresh(hz), owner=window, pool=window._power_pool)
 
 
 def tag_windows_in_gaming_mode(app):

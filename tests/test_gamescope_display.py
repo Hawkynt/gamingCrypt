@@ -234,5 +234,82 @@ def test_settings_gamescope_controls(qtbot, monkeypatch):
     d.gs_refresh.setCurrentIndex(d.gs_refresh.findData(50))
     d.gs_apply.click()
     assert restarts == [1] and mode.display_pending()
-    assert mode.parse_display(mode.read_args()) == {"width": 960, "height": 600, "refresh": 50}
+    # the resolution is gamescope's option; the refresh rate is set while it runs (at every start)
+    assert mode.parse_display(mode.read_args()) == {"width": 960, "height": 600}
+    assert tab.config["system"]["gaming_refresh"] == 50
     assert "15 s" in d.status.text()
+
+
+def test_refresh_rate_changes_without_restarting_gaming_mode(qtbot, monkeypatch):
+    from gamingcrypt.config import DEFAULTS
+    from gamingcrypt.system import gamescope_ctl
+    from gamingcrypt.system.controls import SystemControls
+    from gamingcrypt.ui.settings_tab import SettingsTab
+
+    monkeypatch.setenv("GAMINGCRYPT_SESSION", "1")
+    monkeypatch.setattr(mode, "panel_size", lambda *a: (1280, 800))
+    restarts, rates, saved = [], [], []
+    monkeypatch.setattr(gamescope_ctl, "set_dynamic_refresh", lambda hz, runner=None: rates.append(hz) or True)
+    tab = SettingsTab(copy.deepcopy(DEFAULTS), saved.append, system=SystemControls(),
+                      restart_gaming=lambda: restarts.append(1))
+    qtbot.addWidget(tab)
+    d = tab.display_section
+    assert d.gs_apply.text() == "Apply"
+    d.gs_refresh.setCurrentIndex(d.gs_refresh.findData(50))
+    d.gs_apply.click()
+    assert rates == [50] and restarts == [] and not mode.display_pending()
+    assert saved[-1]["system"]["gaming_refresh"] == 50 and "50 Hz" in d.status.text()
+    d.gs_refresh.setCurrentIndex(0)
+    d.gs_apply.click()
+    assert rates == [50, 0] and saved[-1]["system"]["gaming_refresh"] == 0
+    d.gs_resolution.setCurrentIndex(d.gs_resolution.findData("960x600"))
+    assert "restarts gaming mode" in d.gs_apply.text()  # the resolution still needs it
+    monkeypatch.setattr(gamescope_ctl, "set_dynamic_refresh", lambda hz, runner=None: False)
+    d.gs_resolution.setCurrentIndex(d.gs_resolution.findData("1280x800"))
+    d.gs_refresh.setCurrentIndex(d.gs_refresh.findData(45))
+    d.gs_apply.click()
+    assert "Could not" in d.status.text() and restarts == []
+
+
+def test_a_refresh_rate_among_gamescopes_options_is_taken_out(qtbot, monkeypatch):
+    """Set before it could be changed while gamescope runs ("-r 50"): one last restart."""
+    from gamingcrypt.config import DEFAULTS
+    from gamingcrypt.system.controls import SystemControls
+    from gamingcrypt.ui.settings_tab import SettingsTab
+
+    monkeypatch.setenv("GAMINGCRYPT_SESSION", "1")
+    monkeypatch.setattr(mode, "panel_size", lambda *a: (1280, 800))
+    mode.apply_display(None, None, 50)
+    mode.confirm_display()
+    restarts = []
+    tab = SettingsTab(copy.deepcopy(DEFAULTS), lambda c: None, system=SystemControls(),
+                      restart_gaming=lambda: restarts.append(1))
+    qtbot.addWidget(tab)
+    d = tab.display_section
+    assert d.gs_refresh.currentData() == 50 and "restarts gaming mode" in d.gs_apply.text()
+    d.gs_apply.click()
+    assert restarts == [1] and "refresh" not in mode.parse_display(mode.read_args())
+    assert tab.config["system"]["gaming_refresh"] == 50
+
+
+def test_start_in_gaming_mode_sets_the_refresh_rate_from_settings(qtbot, monkeypatch):
+    from gamingcrypt import app as app_mod
+    from gamingcrypt.config import DEFAULTS
+    from gamingcrypt.system import gamescope_ctl, upscaling
+
+    monkeypatch.setattr(mode, "in_gaming_session", lambda env=None: True)
+    monkeypatch.setattr(upscaling, "available", lambda *a, **k: False)
+    monkeypatch.setattr(gamescope_ctl, "set_focus_order", lambda order, runner=None: True)
+    monkeypatch.setattr(gamescope_ctl, "set_window_appid", lambda *a, **k: True)
+    rates, saved = [], []
+    monkeypatch.setattr(gamescope_ctl, "set_dynamic_refresh", lambda hz, runner=None: rates.append(hz) or True)
+    config = copy.deepcopy(DEFAULTS)
+    config["system"]["gaming_refresh"] = 50
+    window = app_mod.MainWindow(config, saved.append)
+    qtbot.addWidget(window)
+    app_mod.reset_upscaling_in_gaming_mode(window)
+    qtbot.waitUntil(lambda: rates == [50])
+    assert window.default_refresh() == 50
+    monkeypatch.setattr(gamescope_ctl, "dynamic_refresh", lambda runner=None: 50)
+    assert window.menu_refresh() == 0  # the quick menu: "Default" is what Settings says
+    assert window.set_menu_refresh(40) and window.set_menu_refresh(0) and rates == [50, 40, 50]

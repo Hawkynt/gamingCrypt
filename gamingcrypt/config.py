@@ -33,6 +33,8 @@ DEFAULTS: dict[str, Any] = {
         # Re-applied at start because they reset on reboot. None = leave as is.
         "display": None,  # {"output", "width", "height", "refresh"}
         "power_limit_w": None,
+        # Gaming mode: the screen's refresh rate in Hz (0 = the panel's own), set while gamescope runs.
+        "gaming_refresh": 0,
         # Volume per press of the + / - buttons (gaming mode), -10..10.
         # Negative swaps the buttons, 0 turns them off.
         "volume_step": 5,
