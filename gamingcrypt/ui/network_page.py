@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QScrollArea, QVBoxLayout, QWidget
 
 from gamingcrypt.system.wifi import Network, Wifi
 from gamingcrypt.ui.tasks import run_async
-from gamingcrypt.ui.widgets import OnScreenKeyboard, big_button, set_status
+from gamingcrypt.ui.widgets import OnScreenKeyboard, big_button, enable_touch_scroll, set_status
 
 
 class WifiPasswordPage(QWidget):
@@ -304,3 +305,43 @@ class BluetoothSection(QFrame):
     def _failed(self, message: str) -> None:
         self.busy = False
         set_status(self.status, message, error=True)
+
+
+class BluetoothPage(QWidget):
+    """Bluetooth over a running game (from the quick menu): the same list as in Settings."""
+
+    closed = Signal()
+
+    def __init__(self, bluetooth=None, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(30, 16, 30, 16)
+        top = QHBoxLayout()
+        top.addStretch()
+        self.done_button = big_button("Done", "primary")
+        self.done_button.clicked.connect(self.closed.emit)
+        top.addWidget(self.done_button)
+        layout.addLayout(top)
+        self.section = BluetoothSection(bluetooth)
+        scroll = QScrollArea()  # many devices nearby: the list gets long
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        inner = QWidget()
+        box = QVBoxLayout(inner)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.addWidget(self.section)
+        box.addStretch()
+        scroll.setWidget(inner)
+        enable_touch_scroll(scroll)
+        layout.addWidget(scroll, 1)
+
+    def showEvent(self, event) -> None:  # noqa: N802 - Qt API
+        super().showEvent(event)
+        self.section.refresh()
+        self.done_button.setFocus(Qt.FocusReason.TabFocusReason)
+
+    def gamepad_back(self) -> bool:
+        self.closed.emit()
+        return True

@@ -1,5 +1,5 @@
 """Quick menu on the Windows button: audio devices, volume, brightness, refresh rate,
-force quit - and an emulated game's save states and speed. In gaming mode GamingCrypt comes to the front for it while the game keeps
+Bluetooth, force quit - and an emulated game's save states and speed. In gaming mode GamingCrypt comes to the front for it while the game keeps
 running behind (gamescope shows one app at a time) and steps aside again when it closes.
 """
 
@@ -44,6 +44,7 @@ class QuickMenu(QWidget):
     screenshot = Signal()
     states_requested = Signal(str)  # emulated game: the slots to "save" into / to "load"
     controls_requested = Signal()  # emulated game: its button layout
+    bluetooth_requested = Signal()  # pair / connect a controller or headphones, the game keeps running
     speed_chosen = Signal(float)  # emulated game: 0.1 - 10 times as fast
     disc_chosen = Signal(int)  # emulated game on several discs: change to this one (0-based)
 
@@ -150,6 +151,9 @@ class QuickMenu(QWidget):
             self.fps.addItem(f"{fps} FPS" if fps else "No limit", fps)
         self.fps.currentIndexChanged.connect(lambda _i: self.fps_chosen.emit(self.fps.currentData() or 0))
         self.fps_row = self._row("FPS limit", self.fps, None)
+        self.bluetooth_button = big_button("Bluetooth devices")
+        self.bluetooth_button.clicked.connect(self._bluetooth)
+        self.left_column.addWidget(self.bluetooth_button)
         self.left_column.addStretch()
         self.box = self.right_column
         row = QWidget()
@@ -243,7 +247,7 @@ class QuickMenu(QWidget):
             return [w for w in row if w.isVisibleTo(self) and w.isEnabled()]
 
         left = [[self.output], [self.input], [self.volume], [self.brightness], [self.refresh],
-                [self.keep_button, self.revert_button], [self.power], [self.fps]]
+                [self.keep_button, self.revert_button], [self.power], [self.fps], [self.bluetooth_button]]
         right = [[self.back_button], [self.overlay_button, self.screenshot_button],
                  [self.save_state_button, self.load_state_button], [self.controls_button],
                  [self.speed], [self.disc_prev, self.disc_next], [self.quit_button],
@@ -381,6 +385,10 @@ class QuickMenu(QWidget):
     def _controls(self) -> None:
         self._leave_for_page()
         self.controls_requested.emit()
+
+    def _bluetooth(self) -> None:
+        self._leave_for_page()
+        self.bluetooth_requested.emit()
 
     def _overlay_toggled(self, on: bool) -> None:
         from gamingcrypt.system import gamescope_ctl

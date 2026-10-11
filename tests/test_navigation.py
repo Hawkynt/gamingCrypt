@@ -471,7 +471,7 @@ def test_down_reaches_every_control_of_the_quick_menu(qtbot):
     assert nav.focused() in (menu.output, menu.input)  # over to the settings
     nav.focus(menu.output)
     assert walk_down(nav, 10) == [menu.output, menu.input, menu.volume, menu.brightness, menu.refresh, menu.power,
-                                  menu.fps]
+                                  menu.fps, menu.bluetooth_button]
     nav.focus(menu.screenshot_button)
     nav.move(-1, 0)
     assert nav.focused() is menu.overlay_button  # its neighbour in the row
@@ -664,6 +664,7 @@ def test_quick_menu_moves_as_it_looks(qtbot):
     nav.focus(menu.output)
     assert go(1, 0) is menu.back_button  # level with Output: Back to the game
     nav.focus(menu.fps)
-    assert go(0, 1) is menu.fps and go(0, -1) is menu.power
+    assert go(0, 1) is menu.bluetooth_button and go(0, 1) is menu.bluetooth_button
+    assert go(0, -1) is menu.fps and go(0, -1) is menu.power
     value = menu.power.value()
     assert go(1, 0) is menu.power and menu.power.value() > value  # a slider takes left / right itself

@@ -134,3 +134,53 @@ def test_bluetooth_off(qtbot):
     tab.sub_buttons["Network"].click()
     qtbot.waitUntil(lambda: tab.bluetooth_section.status.text() == "Bluetooth is off")
     assert not tab.bluetooth_section.search_button.isEnabled()
+
+
+def test_bluetooth_page_over_a_game(qtbot):
+    """From the quick menu: the same list as in Settings, with Done to go back."""
+    from gamingcrypt.ui.network_page import BluetoothPage
+
+    page = BluetoothPage(bt())
+    qtbot.addWidget(page)
+    page.show()
+    qtbot.waitUntil(lambda: len(page.section.rows) == 2)
+    assert page.section.toggle.isChecked()
+    closed = []
+    page.closed.connect(lambda: closed.append(True))
+    page.done_button.click()
+    assert page.gamepad_back() and closed == [True, True]
+
+
+def test_quick_menu_opens_bluetooth_while_the_game_runs(qtbot, monkeypatch):
+    from gamingcrypt.app import MainWindow
+    from gamingcrypt.config import DEFAULTS
+    from gamingcrypt.ui.network_page import BluetoothPage
+    from gamingcrypt.ui.settings_tab import SettingsTab
+
+    ctl = Ctl()
+    bluetooth = Bluetooth(ctl, which=lambda tool: "/usr/bin/bluetoothctl")
+    cfg = copy.deepcopy(DEFAULTS)
+    window = MainWindow(cfg, lambda c: None, page_factory=lambda c: {
+        "Settings": SettingsTab(c, lambda _c: None, bluetooth=bluetooth)})
+    qtbot.addWidget(window)
+    window.windowed = True
+    window.show()
+    window.show_shell()
+    asides = []
+    monkeypatch.setattr(window, "step_aside", lambda front="steam": asides.append(front))
+    window.game_watcher.appid, window.game_watcher.phase = 620, "playing"  # any game: a Steam one here
+    window.toggle_quick_menu()
+    menu = window.quick_menu
+    assert menu.bluetooth_button.isVisibleTo(menu)
+    menu.bluetooth_button.click()
+    page = window.menu_page
+    assert isinstance(page, BluetoothPage) and page.isVisible() and not menu.isVisible()
+    assert page.section.bt is bluetooth and window.nav_root() is page and asides == []  # the game keeps running behind
+    qtbot.waitUntil(lambda: BUDS in page.section.rows)
+    page.section.choose(next(d for d in bluetooth.devices() if d.mac == BUDS))
+    qtbot.waitUntil(lambda: ["bluetoothctl", "connect", BUDS] in ctl.calls)  # paired, trusted, connected
+    page.done_button.click()
+    assert window.menu_page is None and menu.isVisible() and asides == []  # back in the quick menu, not out of the game
+    menu.close_menu()
+    assert asides == ["game"]
+    window.game_watcher._stop()

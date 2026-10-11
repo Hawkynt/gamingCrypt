@@ -328,7 +328,7 @@ def test_everything_fits_without_scrolling(menu):
     assert m.panel.verticalScrollBar().maximum() == 0
     assert not QScroller.hasScroller(m.panel.viewport())  # flick-scrolling would swallow taps
     viewport = m.panel.viewport().rect()
-    for button in [m.back_button, m.speed, m.disc_next, m.lock_button, m.quit_button]:
+    for button in [m.back_button, m.speed, m.disc_next, m.lock_button, m.quit_button, m.bluetooth_button]:
         r = button.rect().translated(button.mapTo(m.panel.viewport(), button.rect().topLeft()))
         assert viewport.contains(r), button
 
@@ -371,14 +371,18 @@ def test_the_speed_slider(qtbot, menu, monkeypatch):
     assert m.speed.isEnabled() and m.status.text() == ""
 
 
-def test_state_buttons_ask_for_the_slots(menu):
+def test_state_and_bluetooth_buttons_ask_for_their_pages(menu):
     m, *_ = menu
     asked, closed = [], []
     m.states_requested.connect(asked.append)
+    m.bluetooth_requested.connect(lambda: asked.append("bluetooth"))
     m.closed.connect(lambda: closed.append(True))
-    for button in (m.save_state_button, m.load_state_button):
+    for button in (m.save_state_button, m.load_state_button, m.bluetooth_button):
         m.set_emulated(True, 1.0)
         m.open_menu(0x70000001, "Mario")
         button.click()
         assert not m.isVisible()
-    assert asked == ["save", "load"] and closed == []  # GamingCrypt stays in front
+    assert asked == ["save", "load", "bluetooth"] and closed == []  # GamingCrypt stays in front
+    m.set_emulated(False)
+    m.open_menu(620, "Portal 2")
+    assert m.bluetooth_button.isVisibleTo(m) and not m.save_state_button.isVisibleTo(m)  # any game, and none

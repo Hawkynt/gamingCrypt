@@ -591,6 +591,7 @@ class MainWindow(QMainWindow):
             menu.screenshot.connect(self.take_screenshot)
             menu.states_requested.connect(self.open_states)
             menu.controls_requested.connect(self.open_running_controls)
+            menu.bluetooth_requested.connect(self.open_bluetooth)
             menu.speed_chosen.connect(self.set_speed)
             menu.disc_chosen.connect(self.set_disc)
         watcher = self.game_watcher
@@ -1277,6 +1278,14 @@ class MainWindow(QMainWindow):
                                            ("Couldn't save the state - this game can't be saved right now", "⚠"))),
                   lambda _e: self.notify("Couldn't save the state", "⚠"), owner=self)
 
+    def open_bluetooth(self) -> None:
+        """Quick menu: pair / connect a controller or headphones while the game keeps running."""
+        from gamingcrypt.ui.network_page import BluetoothPage
+
+        settings = self.shell.pages.get("Settings") if self.shell else None
+        section = getattr(settings, "bluetooth_section", None)
+        self.show_menu_page(BluetoothPage(getattr(section, "bt", None), parent=self))
+
     def show_menu_page(self, page) -> None:
         """A page opened from the quick menu, over the game; leaving it goes back to the menu."""
         self.close_menu_page(reopen=False)
@@ -1294,7 +1303,7 @@ class MainWindow(QMainWindow):
         page.hide()
         page.deleteLater()
         if reopen:
-            self.toggle_quick_menu()
+            self.toggle_quick_menu()  # e.g. the headphones just connected: now in its outputs
 
     def game_over(self, appid: int | None = None, failed: bool = False) -> None:
         overlay = getattr(self, "game_volume_osd", None)
