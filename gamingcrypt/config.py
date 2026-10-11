@@ -135,4 +135,11 @@ def load_config(path: Path | None = None) -> dict[str, Any]:
 def save_config(config: dict[str, Any], path: Path | None = None) -> None:
     path = path or config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(config, indent=2))
+    # Readable by the owner only: nothing in it opens the drive by itself, but the salt and the
+    # users' key slots are what somebody needs to try codes without the device (unlock/keyslots.py).
+    tmp = path.with_name(path.name + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        fh.write(json.dumps(config, indent=2))
+    os.chmod(tmp, 0o600)
+    tmp.replace(path)

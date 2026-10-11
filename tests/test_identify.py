@@ -133,7 +133,7 @@ def test_choosing_the_game_on_its_page(qtbot, tab, emu):
     page = tab.currentWidget()
     assert isinstance(page, RomGamePage)
     qtbot.waitUntil(lambda: page.unknown_button.isVisibleTo(page))  # looked for a cover: there's none
-    assert page.identify_button.text() == "🔎 Which game is this?"
+    assert page.identify_button.text() == "🔍 Which game is this?"
     assert game_facts.facts_of(hack, tab).genres == ()
     page.unknown_button.click()
     picker = tab.currentWidget()
@@ -151,7 +151,7 @@ def test_choosing_the_game_on_its_page(qtbot, tab, emu):
     picker.buttons[0].click()
     assert tab.currentWidget() is page and tab.rom_names.get(hack) == "Super Mario World (USA)"
     assert not page.unknown_button.isVisibleTo(page)
-    assert page.identify_button.text() == "🔎 Game: Super Mario World (USA)"
+    assert page.identify_button.text() == "🔍 Game: Super Mario World (USA)"
     facts = game_facts.facts_of(hack, tab)
     assert facts.genres == ("Platform",) and facts.year == 1990  # what the filters go by
     qtbot.waitUntil(lambda: tab.covers.cached(hack) is not None)  # its cover came by the name
@@ -169,7 +169,7 @@ def test_a_recognised_game_is_not_asked_about(qtbot, tab, emu):
     tab.open_rom(recognised)
     page = tab.currentWidget()
     qtbot.wait(200)
-    assert not page.unknown_button.isVisibleTo(page) and page.identify_button.text() == "🔎 Game: Terranigma (Germany)"
+    assert not page.unknown_button.isVisibleTo(page) and page.identify_button.text() == "🔍 Game: Terranigma (Germany)"
 
 
 def test_the_list_cannot_be_loaded(qtbot, tab, emu):

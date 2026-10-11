@@ -171,6 +171,10 @@ class SettingsTab(QStackedWidget):
 
         self.services_page = ServicesPage(config, save, ssh=ssh, share=drive_share)
         layout.addWidget(self.services_page)
+        from gamingcrypt import users as users_mod
+
+        # SSH and the drive as a network share reach everything on it: the admin's to switch on
+        self.services_page.setVisible(users_mod.current(config).admin)
         layout.addStretch()
 
         # Controller

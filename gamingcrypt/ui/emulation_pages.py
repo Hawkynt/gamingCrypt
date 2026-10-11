@@ -297,7 +297,7 @@ class RomGamePage(QWidget):
         self.facts.setObjectName("detailMeta")
         info.addWidget(self.facts)
         # no cover, genre or year found by the file's name: which game is it? (the filters need it)
-        self.unknown_button = big_button("❓ Not recognised - choose the game")
+        self.unknown_button = big_button("⚠ Not recognised - choose the game")
         self.unknown_button.clicked.connect(lambda: tab.open_identify(self.game))
         self.unknown_button.hide()
         info.addWidget(self.unknown_button, alignment=Qt.AlignmentFlag.AlignLeft)
@@ -373,7 +373,7 @@ class RomGamePage(QWidget):
             facts is not None and any(facts.facts(self.game)))
         self.unknown_button.setVisible(names is not None and not known)
         if hasattr(self, "identify_button"):
-            self.identify_button.setText(f"🔎 Game: {chosen}" if chosen else "🔎 Which game is this?")
+            self.identify_button.setText(f"🔍 Game: {chosen}" if chosen else "🔍 Which game is this?")
 
     def toggle_options(self, visible: bool) -> None:
         self.options_popup.set_open(visible)
