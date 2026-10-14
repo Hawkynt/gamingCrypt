@@ -63,6 +63,7 @@ class MainWindow(QMainWindow):
         from gamingcrypt.ui.tasks import serial_pool
 
         self._power_pool = serial_pool(self)  # game start/end in quick succession: keep the order
+        self._pause_pool = serial_pool(self)  # a game paused for the quick menu, then going on: in this order
         self.game_watcher.started.connect(self.game_started)
         self.game_watcher.finished.connect(self.game_ended)
         self.game_watcher.failed.connect(self.game_ended)
@@ -730,8 +731,8 @@ class MainWindow(QMainWindow):
             menu.states_requested.connect(self.open_states)
             menu.controls_requested.connect(self.open_running_controls)
             menu.bluetooth_requested.connect(self.open_bluetooth)
-            menu.speed_chosen.connect(self.set_speed)
-            menu.in_step_chosen.connect(self.set_in_step)
+            menu.speed_chosen.connect(self.choose_speed)
+            menu.in_step_chosen.connect(self.choose_in_step)
             menu.disc_chosen.connect(self.set_disc)
         watcher = self.game_watcher
         appid = watcher.appid if watcher.active and watcher.phase in ("starting", "playing") else None
@@ -742,12 +743,17 @@ class MainWindow(QMainWindow):
         menu.set_performance(**self.performance_state(appid))
         rom = self.running_rom() if appid is not None and appid >= EMU_APPID_BASE else None
         retroarch_game = rom is not None and rom.system.emulator == "retroarch"
-        menu.set_emulated(retroarch_game, getattr(self, "speed", 1.0) if retroarch_game else None)
+        speed = getattr(self, "_chosen_speed", None) or getattr(self, "speed", 1.0)  # (chosen, not applied yet)
+        menu.set_emulated(retroarch_game, speed if retroarch_game else None)
         in_step = bool(retroarch_game and self.game_profiles.get(rom.appid).get("in_step"))
-        menu.set_in_step(bool(retroarch_game) and (in_step or self.running_at_50_hz()), in_step)
+        chosen = getattr(self, "_chosen_in_step", None)
+        menu.set_in_step(bool(retroarch_game) and (in_step or self.running_at_50_hz()),
+                         in_step if chosen is None else chosen)
         menu.set_speed_busy(getattr(self, "_speed_changing", False))
         menu.set_discs(len(rom.discs) if retroarch_game else 0, getattr(self, "disc_index", 0))
         menu.open_menu(appid, self.game_name(appid) if appid else "")
+        if rom is not None and watcher.phase == "playing":
+            self.pause_game(rom)  # an emulated game stands still while the menu is open
 
     def refresh_rates(self) -> bool:
         """Gaming mode on a screen with other refresh rates than its own."""
@@ -841,8 +847,66 @@ class MainWindow(QMainWindow):
         run_async(work, done, lambda _e: done(None), owner=self)
 
     def _quick_menu_closed(self) -> None:
+        """Back to the game (also from a page of the menu): it goes on - at the speed chosen."""
+        self.resume_game()
+        self.apply_menu_choices()
         if self.game_watcher.active and self.game_watcher.phase == "playing":
             self.step_aside("game")  # back to the game
+
+    # an emulated game paused while the quick menu is open ------------------------------------
+    def pause_game(self, rom) -> None:
+        if getattr(self, "_paused", None) is not None or getattr(self, "_speed_changing", False):
+            return
+        from gamingcrypt.emulation import retroarch
+        from gamingcrypt.steam import running
+
+        paused = self._paused = {"appid": rom.appid, "retroarch": rom.system.emulator == "retroarch", "done": False}
+
+        def pause() -> None:
+            if paused["retroarch"]:
+                paused["done"] = retroarch.pause()  # (not one it was paused in already)
+            else:  # an emulator without such a command (Eden): its processes stop
+                paused["done"] = running.pause_game(rom.appid, True) > 0
+
+        run_async(pause, lambda _r: None, lambda _e: None, pool=self._pause_pool)
+
+    def resume_game(self) -> None:
+        paused, self._paused = getattr(self, "_paused", None), None
+        if paused is None:
+            return
+        from gamingcrypt.emulation import retroarch
+        from gamingcrypt.steam import running
+
+        def resume() -> None:
+            if not paused["done"]:
+                return
+            if paused["retroarch"]:
+                retroarch.resume()
+            else:
+                running.pause_game(paused["appid"], False)
+
+        run_async(resume, lambda _r: None, lambda _e: None, pool=self._pause_pool)
+
+    def choose_speed(self, speed: float) -> None:
+        """Quick menu: the speed - applied when it's closed."""
+        self._chosen_speed = speed
+
+    def choose_in_step(self, on: bool) -> None:
+        """Quick menu: a 50 Hz game at 60 FPS or not - applied when it's closed."""
+        self._chosen_in_step = on
+
+    def apply_menu_choices(self) -> None:
+        speed, self._chosen_speed = getattr(self, "_chosen_speed", None), None
+        in_step, self._chosen_in_step = getattr(self, "_chosen_in_step", None), None
+        rom = self.running_rom()
+        if rom is None or getattr(self, "_speed_changing", False):
+            return
+        if in_step is not None and in_step != bool(self.game_profiles.get(rom.appid).get("in_step")):
+            if speed is not None and speed != getattr(self, "speed", 1.0):
+                self._remember_speed(rom, speed)
+            self.set_in_step(in_step, speed)  # one restart for both
+        elif speed is not None:
+            self.set_speed(speed)
 
     def _force_quit(self, appid: int) -> None:
         from gamingcrypt.steam.running import force_quit
@@ -1272,9 +1336,7 @@ class MainWindow(QMainWindow):
             return
         mode = retroarch.mode_of(speed)
         fast, slow = getattr(self, "running_rates", self.speed_rates(rom))
-        if mode != "normal":  # the next start has it right away
-            default = retroarch.DEFAULT_FAST if mode == "fast" else retroarch.DEFAULT_SLOW
-            self.game_profiles.set(rom.appid, f"{mode}_speed", None if speed == default else speed)
+        self._remember_speed(rom, speed)
         if mode == "normal" or speed == (fast if mode == "fast" else slow):
             for command in retroarch.mode_commands(getattr(self, "speed_mode", "normal"), mode):
                 retroarch.send(command)
@@ -1282,20 +1344,30 @@ class MainWindow(QMainWindow):
             return
         self.restart_at_speed(rom, speed)
 
+    def _remember_speed(self, rom, speed: float) -> None:
+        """The next start has it right away."""
+        from gamingcrypt.emulation import retroarch
+
+        mode = retroarch.mode_of(speed)
+        if mode != "normal":
+            default = retroarch.DEFAULT_FAST if mode == "fast" else retroarch.DEFAULT_SLOW
+            self.game_profiles.set(rom.appid, f"{mode}_speed", None if speed == default else speed)
+
     def running_at_50_hz(self) -> bool:
         """The running emulated game is a 50 Hz (PAL) one - RetroArch's log says so."""
         from gamingcrypt.emulation import retroarch
 
         return retroarch.is_50_hz(retroarch.content_fps(config_mod.cache_dir() / "logs" / retroarch.LOG_NAME))
 
-    def set_in_step(self, on: bool) -> None:
+    def set_in_step(self, on: bool, speed: float | None = None) -> None:
         """Quick menu: a 50 Hz game at the screen's 60 FPS (a fifth faster) - or as it was made.
-        One of RetroArch's settings, read at its start: the game is saved, started again, put back."""
+        One of RetroArch's settings, read at its start: the game is saved, started again, put back
+        (at ``speed`` when another one was chosen too)."""
         rom = self.running_rom()
         if rom is None or getattr(self, "_speed_changing", False):
             return
         self.game_profiles.set(rom.appid, "in_step", True if on else None)
-        self.restart_at_speed(rom, getattr(self, "speed", 1.0),
+        self.restart_at_speed(rom, speed if speed is not None else getattr(self, "speed", 1.0),
                               text="Changing to 60 FPS…" if on else "Changing back to 50 FPS…",
                               unsaved=("60 FPS" if on else "50 FPS") + " from the next start - this game can't be "
                                                                          "saved while it runs")
@@ -1481,7 +1553,8 @@ class MainWindow(QMainWindow):
         run_async(lambda: savestates.capture(paths, rom, slot, retroarch.send, played=played),
                   lambda ok: self.notify(*(("State saved", "💾") if ok else
                                            ("Couldn't save the state - this game can't be saved right now", "⚠"))),
-                  lambda _e: self.notify("Couldn't save the state", "⚠"), owner=self)
+                  lambda _e: self.notify("Couldn't save the state", "⚠"), owner=self,
+                  pool=self._pause_pool)  # once the game goes on again
 
     def open_bluetooth(self) -> None:
         """Quick menu: pair / connect a controller or headphones while the game keeps running."""
@@ -1522,6 +1595,7 @@ class MainWindow(QMainWindow):
         if isinstance(getattr(self, "menu_page", None), SaveStatesPage):
             self.close_menu_page(reopen=False)  # its game is gone
         self._speed_changing = False
+        self._paused = self._chosen_speed = self._chosen_in_step = None  # its game is gone
         # Pages showing "Starting <game>…" must not keep saying so after the game.
         if self.shell is not None and appid is not None:
             for page in self.shell.findChildren(QWidget):

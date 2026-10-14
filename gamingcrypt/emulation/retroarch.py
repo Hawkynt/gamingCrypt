@@ -408,17 +408,36 @@ def refresh_for(fps: float | None) -> int:
     return 50 if is_50_hz(fps) else 0
 
 
-def playing(port: int = COMMAND_PORT, timeout: float = 0.3) -> bool:
-    """RetroArch answers and runs a game (not: still starting, or gone)."""
+def status(port: int = COMMAND_PORT, timeout: float = 0.3) -> str:
+    """"playing", "paused" - or "" (still starting, no game, or gone)."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         sock.settimeout(timeout)
         sock.sendto(b"GET_STATUS", ("127.0.0.1", port))
-        return sock.recv(4096).startswith(b"GET_STATUS PLAYING")
+        reply = sock.recv(4096)
     except OSError:
-        return False
+        return ""
     finally:
         sock.close()
+    for word in ("PLAYING", "PAUSED"):
+        if reply.startswith(b"GET_STATUS " + word.encode()):
+            return word.lower()
+    return ""
+
+
+def playing(port: int = COMMAND_PORT, timeout: float = 0.3) -> bool:
+    """RetroArch answers and runs a game (not: still starting, or gone)."""
+    return status(port, timeout) == "playing"
+
+
+def pause(port: int = COMMAND_PORT) -> bool:
+    """The game stands still (the quick menu is open) - True: it was running, now it's paused."""
+    return status(port) == "playing" and send("PAUSE_TOGGLE", port)
+
+
+def resume(port: int = COMMAND_PORT) -> bool:
+    """On again after pause()."""
+    return status(port) == "paused" and send("PAUSE_TOGGLE", port)
 
 
 def send(command_text: str, port: int = COMMAND_PORT) -> bool:

@@ -652,7 +652,6 @@ def test_quick_menu_moves_as_it_looks(qtbot):
     assert go(0, 1) is menu.speed
     value = menu.speed.value()
     assert go(1, 0) is menu.speed and menu.speed.value() == value + 1  # the slider: one speed on
-    menu.speed_settle.stop()
     assert go(0, 1) is menu.disc_next
     assert go(-1, 0) is menu.disc_prev
     assert go(0, 1) is menu.quit_button

@@ -401,11 +401,10 @@ def test_opens_at_the_top(qtbot, menu):
     assert bar.value() == 0
 
 
-def test_the_speed_slider(qtbot, menu, monkeypatch):
-    """One slider from 0.1x to 10x; what it rests on is the speed (the D-pad passes others on its way)."""
+def test_the_speed_slider(qtbot, menu):
+    """One slider from 0.1x to 10x: it tells the app what's chosen (applied when the menu closes)."""
     from gamingcrypt.emulation.retroarch import SPEEDS
 
-    monkeypatch.setattr(qm, "SPEED_SETTLE_MS", 20)
     m, *_ = menu
     m.set_emulated(True, 1.0)
     m.open_menu(0x70000001, "Mario")
@@ -415,13 +414,9 @@ def test_the_speed_slider(qtbot, menu, monkeypatch):
     m.speed_chosen.connect(chosen.append)
     for step in (1, 2, 3):
         m.speed.setValue(SPEEDS.index(1.0) + step)
-    assert m.speed_value.text() == "2x" and chosen == []  # shown right away, applied when it rests
-    qtbot.waitUntil(lambda: chosen == [2.0])
-    m.speed.setValue(0)
-    m.close_menu()  # chosen and left right away: it still counts
-    assert chosen == [2.0, 0.1]
-    m.set_emulated(True, 3.0)  # the next time: where the game is
-    assert m.speed_value.text() == "3x" and chosen == [2.0, 0.1]
+    assert m.speed_value.text() == "2x" and chosen[-1] == 2.0 and m.isVisible()
+    m.set_emulated(True, 3.0)  # the next time: what the app says
+    assert m.speed_value.text() == "3x" and chosen[-1] == 2.0
     m.set_speed_busy(True, "Changing the speed to 4x…")
     assert not m.speed.isEnabled() and "4x" in m.status.text()
     m.set_speed_busy(False)

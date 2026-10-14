@@ -102,14 +102,30 @@ def test_normal_and_the_started_rates_are_instant(qtbot, window):
     assert len(window._launches) == 1 and "fast_speed" not in window.game_profiles.get(window._game.appid)
 
 
-def test_the_slider_sets_the_speed(qtbot, window, monkeypatch):
-    from gamingcrypt.ui import quick_menu
-
-    monkeypatch.setattr(quick_menu, "SPEED_SETTLE_MS", 10)
+def test_the_slider_sets_the_speed_when_the_menu_closes(qtbot, window):
+    """Chosen in the menu, applied once it's closed (the game is paused while it's open)."""
     menu = playing(window)
+    menu.speed.setValue(retroarch.SPEEDS.index(0.5))
     menu.speed.setValue(retroarch.SPEEDS.index(2.0))
-    qtbot.waitUntil(lambda: window._sent == ["FAST_FORWARD"])
-    assert menu.isVisible()
+    assert window._sent == [] and menu.isVisible() and window.speed == 1.0
+    menu.close_menu()
+    assert window._sent == ["FAST_FORWARD"] and window.speed == 2.0
+    window.toggle_quick_menu()
+    menu.speed.setValue(retroarch.SPEEDS.index(1.0))
+    menu.save_state_button.click()  # on to a page of the menu: not yet
+    assert window._sent == ["FAST_FORWARD"]
+    window.menu_page.gamepad_back()  # back in the menu, the choice still there
+    assert menu.speed_value.text() == "1x"
+    menu.close_menu()
+    assert window._sent == ["FAST_FORWARD", "FAST_FORWARD"] and window.speed == 1.0
+
+
+def test_the_speed_chosen_is_applied_when_going_back_from_a_page(qtbot, window):
+    menu = playing(window)
+    menu.speed.setValue(retroarch.SPEEDS.index(0.5))
+    menu.load_state_button.click()
+    window.state_chosen(window._game, window._paths, "load", 0)  # a state picked: straight back to the game
+    assert window._sent == ["SLOWMOTION", "LOAD_STATE_SLOT 1"] and window.speed == 0.5
 
 
 def fake_retroarch(window, monkeypatch, saves=True, comes_back=True):
@@ -252,7 +268,8 @@ def test_ticking_it_starts_the_game_again_at_60_fps(qtbot, window, monkeypatch):
     menu = playing(window)
     game = window._game
     menu.in_step_button.click()
-    assert menu.isVisible() and "60 FPS" in menu.status.text() and not menu.in_step_button.isEnabled()
+    assert menu.isVisible() and len(window._launches) == 1  # applied when the menu closes
+    menu.close_menu()
     qtbot.waitUntil(lambda: menu.in_step_button.isEnabled() and len(window._launches) == 2, timeout=8000)
     assert stopped == [game.appid] and window._in_step == [False, True]  # saved, started again in step
     assert window._sent == ["SAVE_STATE", "LOAD_STATE_SLOT 99"]  # and put back where it was, at normal speed
@@ -262,6 +279,7 @@ def test_ticking_it_starts_the_game_again_at_60_fps(qtbot, window, monkeypatch):
     window.toggle_quick_menu()
     assert menu.in_step_button.isChecked()  # kept for this game
     menu.in_step_button.click()  # and back
+    menu.close_menu()
     qtbot.waitUntil(lambda: len(window._launches) == 3 and menu.in_step_button.isEnabled(), timeout=8000)
     assert window._in_step[-1] is False and "in_step" not in window.game_profiles.get(game.appid)
     window.game_over(game.appid)
@@ -283,8 +301,21 @@ def test_a_fast_game_stays_fast_when_ticked(qtbot, window, monkeypatch):
     window.set_speed(2.0)  # the rate it was started with: instant
     window._sent.clear()
     menu.in_step_button.click()
+    menu.close_menu()
     qtbot.waitUntil(lambda: len(window._launches) == 2 and menu.in_step_button.isEnabled(), timeout=8000)
     assert window._sent == ["SAVE_STATE", "LOAD_STATE_SLOT 99", "FAST_FORWARD"] and window.speed == 2.0
+
+
+def test_ticked_and_a_new_speed_together_start_it_again_once(qtbot, window, monkeypatch):
+    fake_retroarch(window, monkeypatch)
+    game_log(PAL_LOG)
+    menu = playing(window)
+    menu.in_step_button.click()
+    menu.speed.setValue(retroarch.SPEEDS.index(5.0))
+    menu.close_menu()
+    qtbot.waitUntil(lambda: len(window._launches) == 2 and menu.in_step_button.isEnabled(), timeout=8000)
+    assert window._in_step == [False, True] and window._launches[-1][1] == 5.0 and window.speed == 5.0
+    assert window._sent == ["SAVE_STATE", "LOAD_STATE_SLOT 99", "FAST_FORWARD"]
 
 
 def test_a_game_that_cannot_be_saved_gets_it_from_the_next_start(qtbot, window, monkeypatch):
@@ -293,6 +324,7 @@ def test_a_game_that_cannot_be_saved_gets_it_from_the_next_start(qtbot, window, 
     game_log(PAL_LOG)
     menu = playing(window)
     menu.in_step_button.click()
+    menu.close_menu()
     qtbot.waitUntil(lambda: any("60 FPS from the next start" in t for t in toasts(window)), timeout=8000)
     assert stopped == [] and len(window._launches) == 1
     assert window.game_profiles.get(window._game.appid).get("in_step") is True

@@ -132,6 +132,20 @@ def launch_phase(appid: int, root: Path | None = None, name: str = "the game",
     return f"Starting {name}…"
 
 
+def pause_game(appid: int, stop: bool, proc: Path = Path("/proc"), kill=None) -> int:
+    """Stop (SIGSTOP) a game's processes, or let them go on (SIGCONT) - how many there were."""
+    import signal
+
+    kill = kill or os.kill
+    pids = game_processes(appid, proc)
+    for pid in pids:
+        try:
+            kill(pid, signal.SIGSTOP if stop else signal.SIGCONT)
+        except OSError:
+            pass
+    return len(pids)
+
+
 def force_quit(appid: int, proc: Path = Path("/proc"), kill=None, sleep=None, grace_s: float = 3.0) -> int:
     """End a running game: SIGTERM its whole process tree, SIGKILL whatever is left.
 
@@ -146,6 +160,7 @@ def force_quit(appid: int, proc: Path = Path("/proc"), kill=None, sleep=None, gr
     for pid in pids:
         try:
             kill(pid, signal.SIGTERM)
+            kill(pid, signal.SIGCONT)  # (one stopped for the quick menu gets the SIGTERM only then)
         except OSError:
             pass
     # Remember the processes from the start: once Steam's launcher has exited, its
