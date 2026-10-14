@@ -220,7 +220,7 @@ def test_dot_grid_buttons_keep_away_from_the_dots(qtbot):
 
 
 def test_dot_grid_with_the_controller_buttons(qtbot):
-    """X / Square takes the last dot back, B / Circle enters - with nothing entered B is back."""
+    """X takes the last dot back, B enters - with nothing entered B is back."""
     from gamingcrypt.input import evdev as e
     from gamingcrypt.ui.navigator import GamepadNavigator
     from gamingcrypt.ui.secret_input import DotGridPad
@@ -267,7 +267,7 @@ def test_the_lock_screen_shows_the_controller_buttons_of_the_dots(qtbot):
     qtbot.waitExposed(window)
     qtbot.wait(50)
     pad = screen.input.widget
-    assert pad.hint.isVisible() and "X / Square" in pad.hint.text() and "B / Circle" in pad.hint.text()
+    assert pad.hint.isVisible() and "Ⓧ  Take the last one back" in pad.hint.text() and "Ⓑ  Enter" in pad.hint.text()
     bottom = lambda w: w.mapTo(window, w.rect().bottomLeft()).y()  # noqa: E731
     assert bottom(pad.hint) < bottom(screen.shutdown_button) <= 800  # all on the screen
     assert bottom(pad.canvas) < pad.hint.mapTo(window, pad.hint.rect().topLeft()).y()  # below the dots

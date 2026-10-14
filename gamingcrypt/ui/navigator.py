@@ -4,7 +4,7 @@ Widgets can take over input with optional hooks:
 ``gamepad_direction(dx, dy) -> bool``, ``gamepad_activate() -> bool``,
 ``gamepad_navigate(current, dx, dy) -> QWidget | None`` (on an ancestor: its own layout's order),
 ``gamepad_back() -> bool`` (also on ancestors), ``gamepad_start() -> bool``, ``gamepad_north() -> bool``
-(Y, the top button) and ``gamepad_west() -> bool`` (X / Square, the left one), also on ancestors.
+(Y, the top button) and ``gamepad_west() -> bool`` (X, the left one), also on ancestors.
 The pad comes in Xbox 360 (xpad) layout: X is BTN_NORTH (0x133), Y is BTN_WEST (0x134) - see input/profile.
 """
 

@@ -278,7 +278,7 @@ class DotGridPad(QWidget):
     """5x5 dots: tap them in your secret order, then confirm."""
 
     submitted = Signal(list)
-    HINT = "Controller:  A sets a dot  ·  X / Square takes the last one back  ·  B / Circle enters it"
+    HINT = "Ⓐ  Set a dot     Ⓧ  Take the last one back     Ⓑ  Enter"  # (as the hint bar writes them)
 
     def __init__(self, size: int = secrets.DOT_GRID_SIZE, parent: QWidget | None = None, hint: bool = False):
         super().__init__(parent)
@@ -315,8 +315,8 @@ class DotGridPad(QWidget):
         layout.addLayout(row, 1)
         layout.addWidget(self.hint)
 
-    # controller: X / Square takes the last dot back, B / Circle enters it (with nothing entered
-    # yet, B is back as everywhere)
+    # controller: X takes the last dot back, B enters it (with nothing entered yet, B is back as
+    # everywhere)
     def gamepad_west(self) -> bool:
         self.backspace()
         return True
