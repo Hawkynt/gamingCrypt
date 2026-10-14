@@ -668,3 +668,114 @@ def test_quick_menu_moves_as_it_looks(qtbot):
     assert go(0, -1) is menu.fps and go(0, -1) is menu.power
     value = menu.power.value()
     assert go(1, 0) is menu.power and menu.power.value() > value  # a slider takes left / right itself
+
+
+def long_page(qtbot):
+    from PySide6.QtWidgets import QScrollArea
+
+    window = QWidget()
+    outer = QVBoxLayout(window)
+    area = QScrollArea()
+    area.setWidgetResizable(True)
+    content = QWidget()
+    column = QVBoxLayout(content)
+    buttons = [big_button(f"Button {i}") for i in range(30)]
+    for b in buttons:
+        column.addWidget(b)
+    area.setWidget(content)
+    outer.addWidget(area)
+    qtbot.addWidget(window)
+    window.resize(500, 400)
+    window.show()
+    qtbot.waitExposed(window)
+    window.activateWindow()
+    qtbot.waitActive(window)
+    return window, area, buttons
+
+
+def busy_when_pressed(button):
+    button.clicked.connect(lambda: button.setEnabled(False))  # e.g. "Checking…"
+
+
+def test_a_button_greyed_out_while_it_works_keeps_the_highlight(qtbot):
+    """Was: "Check for updates" greyed itself out while checking, Qt passed the highlight on
+    and the page scrolled down to wherever it went."""
+    window, area, buttons = long_page(qtbot)
+    nav = GamepadNavigator(window)
+    busy_when_pressed(buttons[0])
+    nav.focus(buttons[0])
+    bar = area.verticalScrollBar()
+    press(nav, e.BTN_SOUTH)
+    qtbot.wait(200)
+    assert not buttons[0].isEnabled()
+    assert bar.value() == 0
+    assert not any(b.hasFocus() for b in buttons[1:])
+    assert nav.focused() is None and nav.parked is buttons[0]
+    press(nav, e.BTN_SOUTH)  # A again while it's busy: nothing happens, the highlight doesn't jump
+    assert nav.focused() is None and bar.value() == 0
+    buttons[0].setEnabled(True)  # done: it has the highlight again
+    assert window.focusWidget() is buttons[0]
+
+
+def test_a_greyed_out_button_further_down_stays_in_view(qtbot):
+    window, area, buttons = long_page(qtbot)
+    nav = GamepadNavigator(window)
+    busy_when_pressed(buttons[12])
+    nav.focus(buttons[12])
+    qtbot.wait(300)
+    bar = area.verticalScrollBar()
+    before = bar.value()
+    press(nav, e.BTN_SOUTH)
+    qtbot.wait(200)
+    assert bar.value() == before
+    buttons[12].setEnabled(True)
+    assert window.focusWidget() is buttons[12]
+
+
+def test_down_from_a_greyed_out_button_goes_to_the_next_one(qtbot):
+    window, area, buttons = long_page(qtbot)
+    nav = GamepadNavigator(window)
+    busy_when_pressed(buttons[3])
+    nav.focus(buttons[3])
+    press(nav, e.BTN_SOUTH)
+    dpad(nav, dy=1)
+    assert window.focusWidget() is buttons[4]
+    buttons[3].setEnabled(True)  # it doesn't take the highlight back
+    assert window.focusWidget() is buttons[4]
+
+
+def test_back_works_while_the_button_is_busy(qtbot):
+    window, area, buttons = long_page(qtbot)
+    backs = []
+    window.gamepad_back = lambda: backs.append(1) or True
+    nav = GamepadNavigator(window)
+    busy_when_pressed(buttons[0])
+    nav.focus(buttons[0])
+    press(nav, e.BTN_SOUTH)
+    press(nav, e.BTN_EAST)
+    assert backs == [1]
+
+
+def test_a_page_choosing_the_next_highlight_itself_keeps_it(qtbot):
+    window, area, buttons = long_page(qtbot)
+    nav = GamepadNavigator(window)
+    buttons[0].clicked.connect(lambda: (buttons[0].setEnabled(False), buttons[5].setFocus()))
+    nav.focus(buttons[0])
+    press(nav, e.BTN_SOUTH)
+    assert window.focusWidget() is buttons[5]
+    buttons[0].setEnabled(True)
+    assert window.focusWidget() is buttons[5]
+
+
+def test_a_button_that_goes_away_when_pressed_leaves_the_highlight_close_by(qtbot):
+    window, area, buttons = long_page(qtbot)
+    nav = GamepadNavigator(window)
+    buttons[12].clicked.connect(buttons[12].hide)  # e.g. "Update now", once updated
+    nav.focus(buttons[12])
+    qtbot.wait(300)
+    bar = area.verticalScrollBar()
+    before = bar.value()
+    press(nav, e.BTN_SOUTH)
+    qtbot.wait(300)
+    assert window.focusWidget() in (buttons[11], buttons[13])
+    assert abs(bar.value() - before) < 120  # (it's taken out of the list: the rest moves up a little)

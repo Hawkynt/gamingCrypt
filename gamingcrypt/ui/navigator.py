@@ -46,6 +46,13 @@ def set_paused(paused: bool) -> None:
 LISTENERS: list[Callable[[int, int, int], bool]] = []
 
 
+def _disconnect(signal, slot) -> None:
+    try:
+        signal.disconnect(slot)
+    except (RuntimeError, TypeError):
+        pass
+
+
 class _Bridge(QObject):
     event = Signal(int, int, int)
 
@@ -68,6 +75,13 @@ class GamepadNavigator(QObject):
         self._scroll_targets: dict[int, int] = {}
         self.hotkey_filter: Callable[[int, int, int], bool] | None = None
         self.anchor_x: float | None = None  # the column up / down keeps (global x)
+        # A highlighted button greyed out while it works ("Checking…") keeps the highlight instead
+        # of Qt passing it on to the next widget (and scrolling the page there).
+        self.parked: QWidget | None = None
+        self._pressing: tuple[QWidget, list] | None = None
+        app = QApplication.instance()
+        app.focusChanged.connect(self._focus_changed)
+        window.destroyed.connect(lambda _o=None: _disconnect(app.focusChanged, self._focus_changed))
 
     # input -------------------------------------------------------------------
     @property
@@ -138,12 +152,110 @@ class GamepadNavigator(QObject):
         self.held = None
         self.repeat.stop()
 
+    # a greyed out highlight ------------------------------------------------------
+    def _focus_changed(self, old: QWidget | None, new: QWidget | None) -> None:
+        if new is None or not shiboken6.isValid(self) or not shiboken6.isValid(self.window):
+            return
+        if self.parked is not None and new is not self.parked and not isinstance(new, QScrollArea):
+            self._unpark()  # (a list itself takes the focus when the window becomes active - not a choice)
+        if old is None or not shiboken6.isValid(old) or old.isEnabled() or old.window() is not self.window.window():
+            return
+        if not old.isVisible():
+            return
+        # Qt hands the highlight on because ``old`` was disabled: keep it there (nothing has
+        # the focus meanwhile - a list mustn't scroll to where it went) and give it back once
+        # it works again.
+        self.parked = old
+        old.installEventFilter(self)
+        new.clearFocus()
+
+    def _unpark(self) -> None:
+        parked, self.parked = self.parked, None
+        if parked is not None and shiboken6.isValid(parked):
+            parked.removeEventFilter(self)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802 - Qt API
+        pressing = self._pressing
+        if pressing is not None and watched is pressing[0] and (
+                (event.type() == QEvent.Type.EnabledChange and not pressing[0].isEnabled())
+                or (event.type() == QEvent.Type.Hide and pressing[0].isHidden())):
+            pressing[1].append(self.window.focusWidget())  # (Qt has just passed the focus on)
+        if watched is self.parked and event.type() == QEvent.Type.EnabledChange and self.parked.isEnabled():
+            parked = self.parked
+            self._unpark()
+            if self._nothing_chosen() and parked.isVisible():
+                parked.setFocus(Qt.FocusReason.OtherFocusReason)
+        return False
+
+    def _keep_if_greyed(self, w: QWidget, press: Callable[[], None]) -> None:
+        """Press ``w``; when it greys itself out meanwhile (busy), it keeps the highlight and
+        the lists stay where they were. (Also when the window isn't active - Qt then doesn't
+        say where the focus went.)"""
+        bars = []
+        area = self._scroll_area(w)
+        while area is not None:
+            bars.append((area.verticalScrollBar(), area.verticalScrollBar().value()))
+            area = self._scroll_area(area)
+        self._pressing = (w, [])  # eventFilter notes where Qt put the focus when w was disabled
+        w.installEventFilter(self)
+        try:
+            press()
+        finally:
+            pressing, self._pressing = self._pressing, None
+            if shiboken6.isValid(w) and w is not self.parked:
+                w.removeEventFilter(self)
+        if not shiboken6.isValid(w) or not pressing[1]:
+            return
+        focus = self.window.focusWidget()
+        if w.isHidden():  # it went away ("Update now" once updated): the nearest one, not where Qt went
+            if focus is pressing[1][-1]:
+                for bar, value in bars:
+                    if shiboken6.isValid(bar):
+                        bar.setValue(value)
+                target = self._closest(w)
+                if target is not None:
+                    self.focus(target)
+            return
+        if w.isEnabled() or not w.isVisible():
+            return
+        if focus is not pressing[1][-1]:
+            return  # the page chose where to go on itself
+        if focus is not None:
+            focus.clearFocus()
+        for bar, value in bars:
+            if shiboken6.isValid(bar):
+                bar.setValue(value)
+        if self.parked is not w:
+            self._unpark()
+            self.parked = w
+            w.installEventFilter(self)
+
+    def _closest(self, w: QWidget) -> QWidget | None:
+        """What's nearest to where ``w`` is (or was)."""
+        here = self._center(w)
+        options = [o for o in self.candidates() if o is not w]
+        if not options:
+            return None
+        return min(options, key=lambda o: (self._center(o) - here).manhattanLength())
+
+    def _parked(self) -> QWidget | None:
+        parked = self.parked
+        if parked is None or not shiboken6.isValid(parked) or not parked.isVisible() or not self._nothing_chosen():
+            return None
+        return parked
+
+    def _nothing_chosen(self) -> bool:
+        focus = self.window.focusWidget()
+        return focus is None or isinstance(focus, QScrollArea)
+
     # helpers -----------------------------------------------------------------
     def root(self) -> QWidget:
         root = getattr(self.window, "nav_root", None)
         return root() if callable(root) else self.window
 
     def focused(self) -> QWidget | None:
+        if self.parked is not None and self._parked() is not None:
+            return None  # a list holding the focus meanwhile isn't the highlight
         # The window's own focus child: still known when the window isn't active
         # (e.g. right after coming back from a game).
         w = self.window.focusWidget() or QApplication.focusWidget()
@@ -248,6 +360,8 @@ class GamepadNavigator(QObject):
     def _scroll_done(self) -> None:
         from gamingcrypt.ui.widgets import FoldingHeader
 
+        if not shiboken6.isValid(self) or not shiboken6.isValid(self.window):
+            return  # a navigator of a closed window: not its business (another may be gliding)
         self._forget_deleted()
         if not any(a.state() == QPropertyAnimation.State.Running for a in self._scroll_anims.values()):
             FoldingHeader.programmatic = False
@@ -265,8 +379,8 @@ class GamepadNavigator(QObject):
             if dy:
                 self._send_key(popup, Qt.Key.Key_Down if dy > 0 else Qt.Key.Key_Up)
             return
-        current = self.focused()
-        if current is not None:
+        current = self.focused() or self._parked()
+        if current is not None and current.isEnabled():
             hook = getattr(current, "gamepad_direction", None)
             if callable(hook) and hook(dx, dy):
                 return
@@ -402,11 +516,16 @@ class GamepadNavigator(QObject):
         next row in the same column, and a row of tabs is entered at the selected tab."""
         mine = self._rect(current)
         if dx:
-            mine = self._seen(current)
+            seen = self._seen(current)
+            area = self._scroll_area(current)
             row = []
             for w in options:
-                rect = self._seen(w)
-                if rect.isEmpty():
+                # in the same list compare where they are, not what's on screen: right after
+                # going down the list is still gliding there, and the neighbours aren't in view yet
+                same_list = area is not None and area.isAncestorOf(w) and self._scroll_area(w) is area
+                rect = self._rect(w) if same_list else self._seen(w)
+                mine = self._rect(current) if same_list else seen
+                if rect.isEmpty() or mine.isEmpty():
                     continue
                 overlap = min(mine.bottom(), rect.bottom()) - max(mine.top(), rect.top())
                 if overlap < min(mine.height(), rect.height()) * 0.5:
@@ -497,6 +616,8 @@ class GamepadNavigator(QObject):
             self._send_key(popup, Qt.Key.Key_Return)
             return
         w = self.focused()
+        if w is None and self._parked() is not None:
+            return  # it's busy (greyed out): A waits
         if w is None:
             target = self.nearest(None, 0, 1)
             if target is not None:
@@ -506,9 +627,9 @@ class GamepadNavigator(QObject):
         if callable(hook) and hook():
             return
         if isinstance(w, QAbstractButton):
-            w.click()
+            self._keep_if_greyed(w, w.click)
         elif hasattr(w, "tapped"):
-            w.tapped.emit()
+            self._keep_if_greyed(w, w.tapped.emit)
         elif isinstance(w, QComboBox):
             w.showPopup()
         elif isinstance(w, QLineEdit):
@@ -549,7 +670,7 @@ class GamepadNavigator(QObject):
                     self.focus(target)
                 return
 
-        w = self.focused()
+        w = self.focused() or self._parked()
         node = w
         while node is not None:
             if isinstance(node, OnScreenKeyboard) and node.target() is not None and node.target().isVisible():
@@ -572,7 +693,7 @@ class GamepadNavigator(QObject):
     def page(self, direction: int) -> None:
         """LT / RT: a screen up / down in a list - the highlight goes to what's there, in the
         same column (the end of the list when there's less than a screen left)."""
-        current = self.focused()
+        current = self.focused() or self._parked()
         area = self._scroll_area(current)
         if current is None or area is None or area.widget() is None:
             return
@@ -601,7 +722,7 @@ class GamepadNavigator(QObject):
     def hook(self, name: str) -> bool:
         """Y / X / Start: the highlighted widget, or the nearest page / tab above it, that has
         ``name()`` and takes it (returns True)."""
-        w = self.focused()
+        w = self.focused() or self._parked()
         while w is not None:
             hook = getattr(w, name, None)
             if callable(hook) and hook():
