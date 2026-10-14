@@ -217,3 +217,64 @@ def test_dot_grid_buttons_keep_away_from_the_dots(qtbot):
             dy = max(rect.top() - dot.y(), 0, dot.y() - rect.bottom())
             assert (dx * dx + dy * dy) ** 0.5 - radius >= 40, (button.text(), dot)
     assert pad.back_button.x() < dots[0].x() < dots[4].x() < pad.ok_button.x()  # left / right of the grid
+
+
+def test_dot_grid_with_the_controller_buttons(qtbot):
+    """X / Square takes the last dot back, B / Circle enters - with nothing entered B is back."""
+    from gamingcrypt.input import evdev as e
+    from gamingcrypt.ui.navigator import GamepadNavigator
+    from gamingcrypt.ui.secret_input import DotGridPad
+
+    from PySide6.QtWidgets import QVBoxLayout, QWidget
+
+    backs = []
+    window = QWidget()
+    host = DotGridPad()
+    QVBoxLayout(window).addWidget(host)
+    window.resize(700, 600)
+    qtbot.addWidget(window)
+    window.show()
+    window.gamepad_back = lambda: backs.append(True) or True  # what B does elsewhere
+    nav = GamepadNavigator(window)
+    nav.focus(host.canvas)
+    press = lambda code: (nav.on_event(e.EV_KEY, code, 1), nav.on_event(e.EV_KEY, code, 0))  # noqa: E731
+    press(e.BTN_EAST)
+    assert backs == [True]  # nothing entered: back as everywhere
+    for _ in range(3):
+        press(e.BTN_SOUTH)
+    assert len(host.nodes) == 3
+    press(e.BTN_WEST)
+    assert len(host.nodes) == 2 and host.display.text() == "●●"
+    with qtbot.waitSignal(host.submitted) as blocker:
+        press(e.BTN_EAST)
+    assert len(blocker.args[0]) == 2 and backs == [True]
+
+
+def test_the_lock_screen_shows_the_controller_buttons_of_the_dots(qtbot):
+    from PySide6.QtWidgets import QMainWindow
+
+    from gamingcrypt.ui import theme
+    from gamingcrypt.users import User
+
+    window = QMainWindow()
+    window.setStyleSheet(theme.STYLESHEET)
+    qtbot.addWidget(window)
+    window.resize(1280, 800)
+    people = [User("admin", "admin", "grid5", admin=True), User("u1", "Mia", "grid5")]
+    screen = LockScreen(FakeUnlocker(), "grid5", users=people, unlocker_for=lambda u: FakeUnlocker())
+    window.setCentralWidget(screen)
+    window.show()
+    qtbot.waitExposed(window)
+    qtbot.wait(50)
+    pad = screen.input.widget
+    assert pad.hint.isVisible() and "X / Square" in pad.hint.text() and "B / Circle" in pad.hint.text()
+    bottom = lambda w: w.mapTo(window, w.rect().bottomLeft()).y()  # noqa: E731
+    assert bottom(pad.hint) < bottom(screen.shutdown_button) <= 800  # all on the screen
+    assert bottom(pad.canvas) < pad.hint.mapTo(window, pad.hint.rect().topLeft()).y()  # below the dots
+    pin = LockScreen(FakeUnlocker(), "pin")
+    qtbot.addWidget(pin)
+    from gamingcrypt.ui.secret_input import DotGridPad
+
+    elsewhere = DotGridPad()  # e.g. setting a code
+    qtbot.addWidget(elsewhere)
+    assert elsewhere.hint.isHidden()

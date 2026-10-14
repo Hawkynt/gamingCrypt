@@ -6,7 +6,7 @@ import math
 
 from PySide6.QtCore import QPointF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
-from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLineEdit, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QLineEdit, QSizePolicy, QVBoxLayout, QWidget
 
 from gamingcrypt.ui import theme
 from gamingcrypt.ui.widgets import OnScreenKeyboard, big_button
@@ -278,12 +278,18 @@ class DotGridPad(QWidget):
     """5x5 dots: tap them in your secret order, then confirm."""
 
     submitted = Signal(list)
+    HINT = "Controller:  A sets a dot  ·  X / Square takes the last one back  ·  B / Circle enters it"
 
-    def __init__(self, size: int = secrets.DOT_GRID_SIZE, parent: QWidget | None = None):
+    def __init__(self, size: int = secrets.DOT_GRID_SIZE, parent: QWidget | None = None, hint: bool = False):
         super().__init__(parent)
         self.nodes: list[int] = []
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)  # (1280x800: the lock screen's hint has to fit too)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.hint = QLabel(self.HINT)  # the controller's buttons for it
+        self.hint.setObjectName("cardMeta")
+        self.hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.hint.setVisible(hint)
         self.display = QLineEdit()
         self.display.setReadOnly(True)
         self.display.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -307,6 +313,19 @@ class DotGridPad(QWidget):
         row.addWidget(self.ok_button, alignment=Qt.AlignmentFlag.AlignVCenter)
         row.addStretch()
         layout.addLayout(row, 1)
+        layout.addWidget(self.hint)
+
+    # controller: X / Square takes the last dot back, B / Circle enters it (with nothing entered
+    # yet, B is back as everywhere)
+    def gamepad_west(self) -> bool:
+        self.backspace()
+        return True
+
+    def gamepad_back(self) -> bool:
+        if not self.nodes:
+            return False
+        self.submitted.emit(list(self.nodes))
+        return True
 
     def press(self, index: int) -> None:
         if len(self.nodes) < 64:
@@ -368,7 +387,8 @@ class SecretInput(QWidget):
         "grid5": secrets.dot_grid_to_secret,
     }
 
-    def __init__(self, method: str, parent: QWidget | None = None):
+    def __init__(self, method: str, parent: QWidget | None = None, hint: bool = False):
+        """hint: the controller's buttons below the 5x5 dots."""
         super().__init__(parent)
         if method not in self.CONVERTERS:
             method = "password"
@@ -382,7 +402,7 @@ class SecretInput(QWidget):
             self.widget = PatternWidget()
             self.widget.pattern_entered.connect(self.submit)
         elif method == "grid5":
-            self.widget = DotGridPad()
+            self.widget = DotGridPad(hint=hint)
             self.widget.submitted.connect(self.submit)
         else:
             self.widget = PasswordEntry()

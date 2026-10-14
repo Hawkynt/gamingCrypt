@@ -33,7 +33,7 @@ class LockScreen(QWidget):
             self.unlocker, method = unlocker_for(self.user), self.user.method
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(40, 30, 40, 30)
+        layout.setContentsMargins(40, 20, 40, 20)
         title = QLabel("🔒 GamingCrypt")
         title.setObjectName("title")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -98,7 +98,7 @@ class LockScreen(QWidget):
         if self.input is not None:
             self.input_box.removeWidget(self.input)
             self.input.deleteLater()
-        self.input = SecretInput(method)
+        self.input = SecretInput(method, hint=True)
         self.method = self.input.method
         self.subtitle.setText(f"Enter your {METHOD_LABELS[self.method]}")
         self.input.secret_entered.connect(self._attempt)
