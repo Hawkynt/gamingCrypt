@@ -1783,7 +1783,7 @@ class MainWindow(QMainWindow):
         if self.launch_overlay.isVisible():
             return self.launch_overlay
         menu = getattr(self.shell, "power_menu", None) if self.shell is not None else None
-        if menu is not None and menu.isVisible():
+        if menu is not None and shiboken6.isValid(menu) and menu.isVisible():
             return menu
         from gamingcrypt.ui.options_popup import OptionsPopup
 
@@ -1825,6 +1825,8 @@ class MainWindow(QMainWindow):
         if old is not None:
             self.stack.removeWidget(old)
             old.deleteLater()
+            if old is self.shell:
+                self.shell = None  # locked: gone (its power menu etc. mustn't be asked any more)
 
     def show_setup(self, missing_volume: str = "") -> None:
         wizard = AuthSetupWizard(self.config, self.save, self.unlocker_factory, first_start=True,

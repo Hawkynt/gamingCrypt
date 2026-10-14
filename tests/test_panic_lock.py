@@ -155,3 +155,35 @@ def test_lock_without_the_drive_share_calls_no_helper(qtbot, window, monkeypatch
     window.shell.power_menu.lock_button.click()
     qtbot.waitUntil(lambda: Unlocker.dismounted == [1])
     assert stopped == []
+
+
+@pytest.mark.parametrize("how", ["power menu", "quick menu"])
+def test_the_d_pad_works_on_the_lock_screen_after_locking(qtbot, window, how):
+    """Was: the lock screen asked the (deleted) main screen's power menu where the controller is -
+    an error at every press, the D-pad did nothing after the first login."""
+    from gamingcrypt.ui.navigator import GamepadNavigator
+
+    nav = GamepadNavigator(window, tab_switch=window.switch_tab)
+    if how == "power menu":
+        window.shell.open_power_menu()
+        nav.focus(window.shell.power_menu.lock_button)
+    else:
+        window.toggle_quick_menu()
+        nav.focus(window.quick_menu.lock_button)
+    nav.on_event(e.EV_KEY, e.BTN_SOUTH, 1)
+    nav.on_event(e.EV_KEY, e.BTN_SOUTH, 0)
+    assert window.screen_name == "lock" and window.shell is None
+    qtbot.wait(50)
+    lock = window.stack.currentWidget()
+    seen = set()
+    for dx, dy in ((0, 1), (1, 0), (0, 1), (-1, 0)):
+        for code, value in ((e.ABS_HAT0X, dx), (e.ABS_HAT0Y, dy)):
+            if value:
+                nav.on_event(e.EV_ABS, code, value)
+                nav.on_event(e.EV_ABS, code, 0)
+        assert nav.focused() is not None and lock.isAncestorOf(nav.focused())
+        seen.add(nav.focused())
+    assert len(seen) >= 3  # it moves
+    nav.on_event(e.EV_KEY, e.BTN_SOUTH, 1)  # and A presses a key
+    nav.on_event(e.EV_KEY, e.BTN_SOUTH, 0)
+    assert lock.input.widget.display.text() != ""
