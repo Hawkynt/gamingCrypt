@@ -51,7 +51,8 @@ touch and controller, and can boot the device straight into a SteamOS-like gamin
 - 👾 **Emulation**: from NES to PS2, GameCube and Switch, through RetroArch and Eden. Cores and
   covers are downloaded for you; shaders and upscaling are included.
 - 💾 **Save states**: nine slots per game in a 3 by 3 grid, each with a picture of the moment,
-  the date and time it was saved and how long you had played up to it.
+  the date and time it was saved and how long you had played up to it. States are only saved and
+  loaded when you pick a slot - RetroArch never saves, loads or deletes one by itself.
 - ⏩ **Speed**: a slider in the quick menu, from 0.1x to 10x, while the game runs.
 - 🇪🇺 **50 Hz games**: tick "60 FPS" in the quick menu and a PAL game runs in step with a 60 Hz
   screen (a fifth faster) instead of stuttering.

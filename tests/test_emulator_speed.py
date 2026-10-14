@@ -137,7 +137,7 @@ def test_another_rate_starts_retroarch_again_where_the_game_was(qtbot, window, m
 
     stopped = fake_retroarch(window, monkeypatch)
     game = window._game
-    (window._paths.states / "Super Mario World.state").write_text("my own state")
+    savestates.state_file(window._paths, game, 0).write_text("my own state")
     menu = playing(window)
     watched = []
     monkeypatch.setattr(window.game_watcher, "watch", lambda *a, **k: watched.append(a))

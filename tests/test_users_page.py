@@ -235,7 +235,7 @@ def emu(tmp_path):
     paths.ensure()
     (paths.roms / "snes" / "Mario.sfc").write_bytes(b"m" * 500)
     (paths.cores / "snes9x_libretro.so").write_text("x")
-    (paths.states / "Mario.state").write_text("the admin's")
+    (paths.states / "Mario.state1").write_text("the admin's")  # slot 1
     (paths.saves / "Mario.srm").write_text("the admin's card")
     return paths
 
@@ -316,7 +316,7 @@ def test_each_user_has_saves_and_save_states_of_their_own(qtbot, emu):
     text = retroarch.write_config(own).read_text()
     assert f'savestate_directory = "{own.states}"' in text and f'savefile_directory = "{own.saves}"' in text
     assert own.states.is_dir() and own.saves.is_dir()  # RetroArch finds them there
-    (own.states / "Mario.state").write_text("Mia's")
+    (own.states / "Mario.state1").write_text("Mia's")
     assert savestates.slots(own, game)[0].path.read_text() == "Mia's"
     assert savestates.slots(admin_tab.emulation, game)[0].path.read_text() == "the admin's"
 

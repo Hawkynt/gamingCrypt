@@ -96,7 +96,13 @@ def write_config(paths: EmulationPaths, extra: dict[str, str] | None = None) -> 
         "input_menu_toggle_gamepad_combo": "0", "input_menu_toggle_btn": "nul", "input_menu_toggle_axis": "nul",
         "input_overlay_enable": "false", "input_overlay": "", "input_overlay_next": "nul",
         "input_overlay_next_btn": "nul", "input_overlay_next_axis": "nul",
-        "savestate_auto_index": "false", "menu_driver": "ozone", "auto_remaps_enable": "true",
+        "menu_driver": "ozone", "auto_remaps_enable": "true",
+        # RetroArch never saves, loads or deletes a state by itself - only the quick menu's Save /
+        # Load state do (and it saves into its slot 0 only: emulation/savestates)
+        "savestate_auto_index": "false", "savestate_auto_save": "false", "savestate_auto_load": "false",
+        "savestate_max_keep": "0", "state_slot": "0",
+        **{f"input_{key}{kind}": "nul" for key in ("save_state", "load_state", "state_slot_increase",
+                                                   "state_slot_decrease") for kind in ("", "_btn", "_axis", "_mbtn")},
         # save states: right in states/ (not a folder per core), each with a picture (emulation/savestates)
         "savestate_thumbnail_enable": "true", "sort_savestates_enable": "false",
         "sort_savestates_by_content_enable": "false", "savestates_in_content_dir": "false",

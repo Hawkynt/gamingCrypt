@@ -1,9 +1,12 @@
 """Save states of RetroArch games: nine slots, each with a picture of the moment it was saved.
 
 RetroArch names a state after the game ("Game.state", "Game.state1" …) and writes its picture
-next to it ("Game.state1.png"); GamingCrypt adds how long was played up to it ("Game.state1.time"). It can load any slot (LOAD_STATE_SLOT), but saves only into
-"the current one" - which GamingCrypt doesn't know. So a save goes: put the kept states aside,
-let RetroArch save, and move what it wrote into the slot that was picked.
+next to it ("Game.state1.png"); GamingCrypt adds how long was played up to it ("Game.state1.time").
+It can load any slot (LOAD_STATE_SLOT), but saves only into "the current one" - and RetroArch
+puts that back to 0 whenever a game starts (its slot keys are switched off: it stays there).
+So RetroArch's slot 0 ("Game.state") is where it saves, and GamingCrypt then moves what it
+wrote into the slot that was picked: the nine slots are RetroArch's 1-9. Nothing else is
+touched - no other state is moved or deleted while saving, and nothing is ever deleted on its own.
 """
 
 from __future__ import annotations
@@ -11,6 +14,7 @@ from __future__ import annotations
 import glob
 import os
 import re
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,8 +25,10 @@ from gamingcrypt.emulation.library import EmulationPaths, RomGame
 SLOTS = 9
 SPARE = 99  # not one of the nine: the state a game comes back with after its speed was changed
 SPARE_KEPT_S = 120
-ASIDE = ".keep"  # a kept state while RetroArch saves
+SCRATCH = 0  # RetroArch's own slot: where it saves, before it's moved into the slot picked
+ASIDE = ".keep"  # (before 1.0.23: a kept state while RetroArch saved)
 WITH_IT = (".png", ".time")  # what belongs to a state: its picture, its play time
+_saving = threading.Lock()  # one save at a time, and no tidying up in the middle of one
 
 
 @dataclass
@@ -38,8 +44,17 @@ class State:
         return self.path is None
 
 
+def _file_index(slot: int) -> int:
+    """The nine slots (0-8) are RetroArch's slots 1-9; the spare one is itself."""
+    return slot if slot == SPARE else slot + 1
+
+
+def _named(paths: EmulationPaths, game: RomGame, index: int) -> Path:
+    return paths.states / f"{game.path.stem}.state{index or ''}"
+
+
 def state_file(paths: EmulationPaths, game: RomGame, slot: int) -> Path:
-    return paths.states / f"{game.path.stem}.state{slot or ''}"
+    return _named(paths, game, _file_index(slot))
 
 
 def picture_of(state: Path) -> Path:
@@ -58,7 +73,7 @@ def read_played(state: Path) -> int | None:
 
 
 def load_command(slot: int) -> str:
-    return f"LOAD_STATE_SLOT {slot}"
+    return f"LOAD_STATE_SLOT {_file_index(slot)}"
 
 
 def _age(path: Path) -> float:
@@ -76,11 +91,10 @@ def _size(path: Path) -> int:
 
 
 def _written(paths: EmulationPaths, game: RomGame) -> list[tuple[Path, int]]:
-    """(file, slot) of every state RetroArch wrote for the game - also in a folder per core
-    below states/ (RetroArch's own "sort save states" setting, before GamingCrypt switched it off)."""
+    """(file, RetroArch's slot) of every state of the game right in states/."""
     name = re.compile(re.escape(game.path.stem) + r"\.state(\d*)$")
     try:
-        files = [f for f in paths.states.rglob(glob.escape(game.path.stem) + ".state*") if f.is_file()]
+        files = [f for f in paths.states.glob(glob.escape(game.path.stem) + ".state*") if f.is_file()]
     except OSError:
         return []
     return sorted((f, int(m.group(1) or 0)) for f in files if (m := name.match(f.name)))
@@ -108,59 +122,68 @@ def _delete(state: Path) -> None:
             pass
 
 
-def _put_aside(paths: EmulationPaths, game: RomGame) -> None:
-    for state, _slot in _written(paths, game):
-        for f in (state, *_with(state)):
-            if f.is_file():
-                os.replace(f, f.with_name(f.name + ASIDE))
+def _free_index(paths: EmulationPaths, game: RomGame) -> int:
+    """A file name nothing has: one of the nine slots if there's one, else one above them
+    (kept on the drive, not shown)."""
+    taken = {index for _f, index in _written(paths, game)}
+    for index in [*range(SLOTS, 0, -1), *range(SLOTS + 1, SPARE), *range(SPARE + 1, 10000)]:
+        if index not in taken:
+            return index
+    raise OSError("no free save state name")
 
 
 def _put_back(paths: EmulationPaths, game: RomGame) -> None:
-    """The kept states again - except where a new one was saved meanwhile. Also after a crash
-    in the middle of a save."""
+    """States put aside by GamingCrypt before 1.0.23 (cut off in the middle of a save): back -
+    under a free name when one was saved there meanwhile. Never deleted."""
     try:
-        aside = [f for f in paths.states.rglob(glob.escape(game.path.stem) + ".state*" + ASIDE) if f.is_file()]
+        aside = sorted(f for f in paths.states.glob(glob.escape(game.path.stem) + ".state*" + ASIDE) if f.is_file())
     except OSError:
         return
-    back: set[Path] = set()
-    for f in sorted(aside):  # "Game.state1.keep" before "Game.state1.png.keep"
+    states = [f for f in aside if not any(f.name.endswith(s + ASIDE) for s in WITH_IT)]
+    for f in states:
         target = f.with_name(f.name[: -len(ASIDE)])
-        suffix = next((s for s in WITH_IT if target.name.endswith(s)), "")
-        state = target.with_name(target.name[: -len(suffix)]) if suffix else target
         try:
-            if target.exists() or (suffix and state.exists() and state not in back):
-                f.unlink()  # replaced by a new save (its picture and play time: with the state)
-            else:
-                os.replace(f, target)
-                back.add(target)
+            if target.exists():
+                target = _named(paths, game, _free_index(paths, game))
+            os.replace(f, target)
+            for suffix in WITH_IT:
+                extra = f.with_name(f.name[: -len(ASIDE)] + suffix + ASIDE)
+                if extra.is_file():
+                    os.replace(extra, target.with_name(target.name + suffix))
         except OSError:
             pass
+
+
+def _adopt_scratch(paths: EmulationPaths, game: RomGame) -> bool:
+    """A state in RetroArch's own slot 0 - one from before 1.0.23 (its slot 1), or one a save
+    left there when it was cut off - into a free slot. False: it couldn't be moved."""
+    scratch = _named(paths, game, SCRATCH)
+    if not scratch.is_file():
+        return True
+    try:
+        _move(scratch, _named(paths, game, _free_index(paths, game)))
+    except OSError:
+        return False
+    return True
 
 
 def tidy(paths: EmulationPaths, game: RomGame, clock: Callable[[], float] = time.time) -> None:
-    """The nine newest states, in the slots 0-8 right in states/; the others are deleted.
-    (More than nine, other slots, a folder per core: from before the nine slots.)"""
+    """States that aren't where they belong into a free slot; the spare one once it's old.
+    (Not while a save is going on: its state isn't finished yet.)"""
+    if not _saving.acquire(blocking=False):
+        return
+    try:
+        _tidy(paths, game, clock)
+    finally:
+        _saving.release()
+
+
+def _tidy(paths: EmulationPaths, game: RomGame, clock: Callable[[], float] = time.time) -> bool:
     _put_back(paths, game)
-    found = []
-    for state, slot in _written(paths, game):
-        if slot == SPARE:
-            if clock() - _age(state) > SPARE_KEPT_S:
-                _delete(state)
-            continue
-        found.append((state, slot))
-    found.sort(key=lambda item: _age(item[0]), reverse=True)
-    for state, _slot in found[SLOTS:]:
-        _delete(state)
-    kept = sorted(found[:SLOTS], key=lambda item: item[1])
-    home = {slot for state, slot in kept if slot < SLOTS and state == state_file(paths, game, slot)}
-    free = [slot for slot in range(SLOTS) if slot not in home]
-    for state, slot in kept:
-        if slot in home and state == state_file(paths, game, slot):
-            continue
-        try:
-            _move(state, state_file(paths, game, free.pop(0)))
-        except OSError:
-            pass
+    spare = _named(paths, game, SPARE)
+    if spare.is_file() and clock() - _age(spare) > SPARE_KEPT_S:
+        _delete(spare)
+    return _adopt_scratch(paths, game)
 
 
 def slots(paths: EmulationPaths, game: RomGame) -> list[State]:
@@ -178,30 +201,27 @@ def slots(paths: EmulationPaths, game: RomGame) -> list[State]:
     return found
 
 
-def _wait_for_state(paths: EmulationPaths, game: RomGame, timeout: float, sleep, clock) -> Path | None:
-    """What RetroArch saved, once it's written completely (the same size twice) - and its picture,
-    which may take a moment longer."""
+def _wait_for_state(scratch: Path, timeout: float, sleep, clock) -> bool:
+    """RetroArch wrote its state completely (the same size twice) - and its picture, which may
+    take a moment longer."""
     deadline = clock() + timeout
-    seen: tuple[Path, int] | None = None
-    state = None
-    while state is None and clock() < deadline:
+    seen = -1
+    while clock() < deadline:
         sleep(0.15)
-        written = _written(paths, game)
-        if written:
-            now = (written[0][0], _size(written[0][0]))
-            if now[1] and now == seen:
-                state = now[0]
-            seen = now
-    if state is None:
-        return None
+        size = _size(scratch)
+        if size and size == seen:
+            break
+        seen = size
+    else:
+        return False
     deadline, size = clock() + 3, -1
     while clock() < deadline:
-        now = _size(picture_of(state))
+        now = _size(picture_of(scratch))
         if now and now == size:
             break
         size = now
         sleep(0.15)
-    return state
+    return True
 
 
 def capture(paths: EmulationPaths, game: RomGame, slot: int, send: Callable[[str], bool], timeout: float = 15.0,
@@ -209,25 +229,24 @@ def capture(paths: EmulationPaths, game: RomGame, slot: int, send: Callable[[str
             played: int | None = None) -> bool:
     """Save the running game into the slot. False: RetroArch wrote nothing (a core without save
     states) - what was in the slot is still there then. played: seconds played up to now."""
-    tidy(paths, game)
-    _delete(state_file(paths, game, SPARE))
-    _put_aside(paths, game)
-    try:
-        if not send("SAVE_STATE"):
+    with _saving:
+        if not _tidy(paths, game):
+            return False  # RetroArch's slot 0 isn't free: its save would replace a state
+        scratch = _named(paths, game, SCRATCH)
+        try:
+            for f in _with(scratch):
+                f.unlink(missing_ok=True)  # a picture without its state
+            if not send("SAVE_STATE"):
+                return False
+            if not _wait_for_state(scratch, timeout, sleep, clock):
+                return False  # (should it still come: the next look at the slots puts it in a free one)
+            target = state_file(paths, game, slot)
+            _move(scratch, target)
+            if played is not None:
+                played_file(target).write_text(f"{int(played)}\n")
+            return True
+        except OSError:
             return False
-        state = _wait_for_state(paths, game, timeout, sleep, clock)
-        if state is None:
-            return False
-        target = state_file(paths, game, slot)
-        if state != target:
-            _move(state, target)
-        if played is not None:
-            played_file(target).write_text(f"{int(played)}\n")
-        return True
-    except OSError:
-        return False
-    finally:
-        _put_back(paths, game)
 
 
 def rescue(paths: EmulationPaths, game: RomGame) -> int | None:

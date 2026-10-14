@@ -53,11 +53,34 @@ class FakeRetroArch:
         return True
 
 
+def slot_name(slot):
+    """The file of one of the nine slots (0-8): RetroArch's slots 1-9."""
+    return f"Super Mario World.state{slot + 1}"
+
+
+def put(paths, slot, text="state", age=0, picture=True):
+    return write(paths, slot_name(slot), text, age=age, picture=picture)
+
+
 def test_names_as_retroarch_uses_them(emu, game):
-    assert savestates.state_file(emu, game, 0).name == "Super Mario World.state"
-    assert savestates.state_file(emu, game, 4).name == "Super Mario World.state4"
-    assert savestates.picture_of(savestates.state_file(emu, game, 4)).name == "Super Mario World.state4.png"
-    assert savestates.load_command(4) == "LOAD_STATE_SLOT 4"
+    """The nine slots are RetroArch's 1-9: its slot 0 is where it saves (it goes back there at
+    every start), before the state is moved into the slot that was picked."""
+    assert savestates.state_file(emu, game, 0).name == "Super Mario World.state1"
+    assert savestates.state_file(emu, game, 8).name == "Super Mario World.state9"
+    assert savestates.state_file(emu, game, savestates.SPARE).name == "Super Mario World.state99"
+    assert savestates.picture_of(savestates.state_file(emu, game, 4)).name == "Super Mario World.state5.png"
+    assert savestates.load_command(4) == "LOAD_STATE_SLOT 5"
+    assert savestates.load_command(savestates.SPARE) == "LOAD_STATE_SLOT 99"
+
+
+def test_retroarch_never_saves_loads_or_deletes_a_state_by_itself(emu):
+    text = retroarch.write_config(emu).read_text()
+    for setting in ("savestate_auto_save", "savestate_auto_load", "savestate_auto_index"):
+        assert f'{setting} = "false"' in text
+    assert 'savestate_max_keep = "0"' in text  # (0: it deletes none)
+    for key in ("save_state", "load_state", "state_slot_increase", "state_slot_decrease"):
+        for kind in ("", "_btn", "_axis"):
+            assert f'input_{key}{kind} = "nul"' in text  # no key or button of its own for it
 
 
 def test_config_asks_for_pictures_right_in_the_states_folder(emu):
@@ -67,61 +90,77 @@ def test_config_asks_for_pictures_right_in_the_states_folder(emu):
 
 
 def test_nine_slots_with_and_without_pictures(emu, game):
-    write(emu, "Super Mario World.state", age=50)
-    write(emu, "Super Mario World.state3", age=10, picture=False)  # saved before there were pictures
+    put(emu, 0, age=50)
+    put(emu, 3, age=10, picture=False)  # saved before there were pictures
     write(emu, "Super Mario World 2.state1")  # another game
     write(emu, "Super Mario World.state.auto")  # RetroArch's own, not a slot
     slots = savestates.slots(emu, game)
     assert [s.slot for s in slots] == list(range(9)) and [s.slot for s in slots if not s.empty] == [0, 3]
-    assert slots[0].picture.name == "Super Mario World.state.png" and slots[3].picture is None
+    assert slots[0].picture.name == "Super Mario World.state1.png" and slots[3].picture is None
     assert slots[3].saved_at > slots[0].saved_at
     assert (emu.states / "Super Mario World 2.state1").exists() and (emu.states / "Super Mario World.state.auto").exists()
 
 
-def test_more_than_nine_keeps_the_newest_nine(emu, game):
-    """After the update: states in any slot, also in RetroArch's folder per core."""
-    for slot in range(12):
-        write(emu, f"Super Mario World.state{slot or ''}", f"s{slot}", age=1000 - slot * 10)  # 11 is the newest
-    write(emu, "Super Mario World.state40", "s40", age=5, folder="Snes9x")
+def files(emu):
+    return sorted(str(f.relative_to(emu.states)) for f in emu.states.rglob("*") if f.is_file())
+
+
+def test_states_from_before_are_all_kept(emu, game):
+    """Before 1.0.23 the slots were RetroArch's 0-8: the one in its slot 0 moves to the free
+    slot 9 - nothing is deleted, also not more than nine or those in a folder per core."""
+    for index in range(9):
+        write(emu, f"Super Mario World.state{index or ''}", f"s{index}", age=1000 - index * 10)
+    (emu.states / "Super Mario World.state.time").write_text("60\n")
+    before = files(emu)
     slots = savestates.slots(emu, game)
-    assert all(not s.empty for s in slots)
-    kept = sorted(s.path.read_text() for s in slots)
-    assert kept == sorted(["s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11", "s40"])
-    assert {s.path.read_text() for s in slots if s.slot >= 4} >= {"s4", "s5", "s6", "s7", "s8"}  # stayed where they were
-    assert all(s.picture.read_text() == "picture of " + s.path.read_text() for s in slots)  # each its own picture
-    left = sorted(f.name for f in emu.states.rglob("*") if f.is_file())
-    assert len(left) == 18 and not (emu.states / "Snes9x" / "Super Mario World.state40").exists()
-    assert savestates.slots(emu, game)[5].path.read_text() == slots[5].path.read_text()  # and it stays that way
+    assert [s.path.read_text() for s in slots] == ["s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s0"]
+    assert slots[8].picture.read_text() == "picture of s0" and slots[8].played == 60
+    assert len(files(emu)) == len(before)
+    write(emu, "Super Mario World.state12", "s12")
+    write(emu, "Super Mario World.state40", "s40", folder="Snes9x")
+    write(emu, "Super Mario World.state", "s-new")  # in RetroArch's slot 0 again, all nine taken
+    savestates.slots(emu, game)
+    assert (emu.states / "Snes9x" / "Super Mario World.state40").read_text() == "s40"
+    assert (emu.states / "Super Mario World.state12").read_text() == "s12"
+    assert (emu.states / "Super Mario World.state10").read_text() == "s-new"  # kept, under a free name
+    assert len(files(emu)) == len(before) + 6
 
 
-def test_saving_into_a_slot_keeps_the_others(emu, game):
-    """RetroArch saves into its own current slot (here 0, which is taken) - the state ends up in
-    the slot that was picked, and what was in slot 0 is still there."""
-    write(emu, "Super Mario World.state", "old 0", age=100)
-    write(emu, "Super Mario World.state2", "old 2", age=90)
+def test_saving_into_a_slot_touches_no_other_state(emu, game):
+    """RetroArch saves into its slot 0 - the state is moved into the slot picked, and no other
+    file is renamed or deleted meanwhile."""
+    put(emu, 0, "old 0", age=100)
+    put(emu, 2, "old 2", age=90)
     fake = FakeRetroArch(emu)
-    assert savestates.capture(emu, game, 5, fake, sleep=lambda s: None)
+    seen = []
+    real = fake.__call__
+
+    def send(text, port=None):
+        seen.append(files(emu))  # what's there while RetroArch saves
+        return real(text)
+
+    assert savestates.capture(emu, game, 5, send, sleep=lambda s: None)
     assert fake.sent == ["SAVE_STATE"]
+    assert seen[0] == sorted([slot_name(0), slot_name(0) + ".png", slot_name(2), slot_name(2) + ".png"])
     slots = savestates.slots(emu, game)
     assert {s.slot: s.path.read_text() for s in slots if not s.empty} == {0: "old 0", 2: "old 2", 5: "save 1"}
     assert slots[5].picture.read_text() == "picture of save 1" and slots[0].picture.read_text() == "picture of old 0"
-    assert not list(emu.states.glob("*.keep"))
+    assert not (emu.states / "Super Mario World.state").exists()
 
 
 def test_saving_over_a_slot(emu, game):
-    write(emu, "Super Mario World.state", "old 0", age=100)
-    write(emu, "Super Mario World.state2", "old 2", age=90)
-    fake = FakeRetroArch(emu, slot=7, picture=False)  # RetroArch on another slot, and no picture this time
+    put(emu, 0, "old 0", age=100)
+    put(emu, 2, "old 2", age=90)
+    fake = FakeRetroArch(emu, picture=False)  # no picture this time
     assert savestates.capture(emu, game, 2, fake, sleep=lambda s: None, clock=iter(range(0, 9999)).__next__)
     slots = savestates.slots(emu, game)
     assert {s.slot: s.path.read_text() for s in slots if not s.empty} == {0: "old 0", 2: "save 1"}
     assert slots[2].picture is None  # not the picture of what was there before
-    assert sorted(f.name for f in emu.states.iterdir()) == [
-        "Super Mario World.state", "Super Mario World.state.png", "Super Mario World.state2"]
+    assert files(emu) == [slot_name(0), slot_name(0) + ".png", slot_name(2)]
 
 
 def test_a_core_that_cannot_save_loses_nothing(emu, game):
-    write(emu, "Super Mario World.state", "old 0")
+    put(emu, 0, "old 0")
     fake = FakeRetroArch(emu, saves=False)
     assert not savestates.capture(emu, game, 0, fake, timeout=3, sleep=lambda s: None,
                                   clock=iter(range(0, 9999)).__next__)
@@ -131,11 +170,47 @@ def test_a_core_that_cannot_save_loses_nothing(emu, game):
     assert savestates.slots(emu, game)[0].path.read_text() == "old 0"
 
 
-def test_a_save_that_was_interrupted_is_put_back(emu, game):
+def test_a_save_that_comes_too_late_lands_in_a_free_slot(emu, game):
+    put(emu, 0, "old 0")
+    late = FakeRetroArch(emu, saves=False)
+    assert not savestates.capture(emu, game, 0, late, timeout=3, sleep=lambda s: None,
+                                  clock=iter(range(0, 9999)).__next__)
+    write(emu, "Super Mario World.state", "late")  # RetroArch got to it after all
+    slots = savestates.slots(emu, game)
+    assert slots[0].path.read_text() == "old 0" and slots[8].path.read_text() == "late"
+
+
+def test_a_save_that_was_interrupted_before_the_update_is_put_back(emu, game):
     write(emu, "Super Mario World.state1.keep", "old 1", picture=False)
     (emu.states / "Super Mario World.state1.png.keep").write_text("picture of old 1")
+    write(emu, "Super Mario World.state3.keep", "old 3", picture=False)
+    put(emu, 2, "new 3")  # (file state3) saved since: both are kept
     slots = savestates.slots(emu, game)
-    assert slots[1].path.read_text() == "old 1" and slots[1].picture.read_text() == "picture of old 1"
+    assert slots[0].path.read_text() == "old 1" and slots[0].picture.read_text() == "picture of old 1"
+    assert slots[2].path.read_text() == "new 3" and slots[8].path.read_text() == "old 3"
+    assert not list(emu.states.glob("*.keep"))
+
+
+def test_one_save_at_a_time_and_no_tidying_in_the_middle(emu, game):
+    import threading
+
+    started, go = threading.Event(), threading.Event()
+    fake = FakeRetroArch(emu)
+
+    def slow(text, port=None):
+        started.set()
+        go.wait(5)
+        return fake(text)
+
+    worker = threading.Thread(target=lambda: savestates.capture(emu, game, 4, slow, sleep=lambda s: None))
+    worker.start()
+    started.wait(5)
+    write(emu, "Super Mario World.state", "being written")  # RetroArch is just writing it
+    savestates.slots(emu, game)  # Load state opened meanwhile: it isn't taken for an old one
+    assert (emu.states / "Super Mario World.state").read_text() == "being written"
+    go.set()
+    worker.join(5)
+    assert savestates.slots(emu, game)[4].path.read_text() == "save 1"
 
 
 def test_the_spare_state_is_not_a_slot(emu, game):
@@ -154,7 +229,7 @@ def test_the_spare_state_is_not_a_slot(emu, game):
 def test_removing_a_game_takes_its_states_along(emu, game):
     from gamingcrypt.emulation import removal
 
-    write(emu, "Super Mario World.state3")
+    put(emu, 2)
     names = {f.name for f in removal.save_files(emu, game)}
     assert names == {"Super Mario World.state3", "Super Mario World.state3.png"}
 
@@ -195,9 +270,9 @@ def test_saved_text():
 def test_three_by_three_with_pictures_and_placeholders(qtbot, host, emu, game):
     from gamingcrypt.ui.save_states import SaveStatesPage
 
-    write(emu, "Super Mario World.state", age=500)
-    picture(emu.states / "Super Mario World.state.png")
-    write(emu, "Super Mario World.state4", age=20, picture=False)  # from before the update
+    put(emu, 0, age=500)
+    picture(emu.states / (slot_name(0) + ".png"))
+    put(emu, 4, age=20, picture=False)  # from before there were pictures
     page = SaveStatesPage(savestates.slots(emu, game), "load", "Super Mario World", parent=host)
     page.show()
     host.grab()
@@ -233,7 +308,7 @@ def test_saving_asks_before_replacing(qtbot, host, emu, game):
     from gamingcrypt.ui.modal import open_modal
     from gamingcrypt.ui.save_states import SaveStatesPage
 
-    write(emu, "Super Mario World.state", age=500)
+    put(emu, 0, age=500)
     page = SaveStatesPage(savestates.slots(emu, game), "save", parent=host)
     page.show()
     assert all(t.isEnabled() for t in page.tiles) and page.first is page.tiles[1]  # the first empty one
@@ -255,7 +330,7 @@ def test_all_slots_taken_starts_on_the_oldest(qtbot, host, emu, game):
     from gamingcrypt.ui.save_states import SaveStatesPage
 
     for slot in range(9):
-        write(emu, f"Super Mario World.state{slot or ''}", age=100 + (500 if slot == 6 else slot))
+        put(emu, slot, age=100 + (500 if slot == 6 else slot))
     page = SaveStatesPage(savestates.slots(emu, game), "save", parent=host)
     assert page.first is page.tiles[6]
 
@@ -301,7 +376,7 @@ def playing(window, game):
 def test_save_from_the_quick_menu(qtbot, window, emu, game, monkeypatch):
     from gamingcrypt.ui.save_states import SaveStatesPage
 
-    write(emu, "Super Mario World.state", "old 0", age=100)
+    put(emu, 0, "old 0", age=100)
     fake = FakeRetroArch(emu)
     monkeypatch.setattr(retroarch, "send", fake)
     menu = playing(window, game)
@@ -318,7 +393,7 @@ def test_save_from_the_quick_menu(qtbot, window, emu, game, monkeypatch):
 
 
 def test_load_from_the_quick_menu(qtbot, window, emu, game, monkeypatch):
-    write(emu, "Super Mario World.state6", age=100)
+    put(emu, 6, age=100)
     fake = FakeRetroArch(emu)
     monkeypatch.setattr(retroarch, "send", fake)
     menu = playing(window, game)
@@ -326,7 +401,7 @@ def test_load_from_the_quick_menu(qtbot, window, emu, game, monkeypatch):
     page = window.menu_page
     assert page.mode == "load" and page.first is page.tiles[6]
     page.tiles[6].tapped.emit()
-    assert fake.sent == ["LOAD_STATE_SLOT 6"] and window._asides == ["game"]
+    assert fake.sent == ["LOAD_STATE_SLOT 7"] and window._asides == ["game"]
     assert any("State loaded" in t for t in toasts(window))
 
 
@@ -367,8 +442,8 @@ def test_played_text():
 def test_play_time_is_kept_with_its_state(emu, game):
     fake = FakeRetroArch(emu)
     assert savestates.capture(emu, game, 3, fake, sleep=lambda s: None, played=754)
-    assert (emu.states / "Super Mario World.state3.time").read_text() == "754\n"
-    write(emu, "Super Mario World.state5", "old 5", age=50)  # from before play time was counted
+    assert (emu.states / (slot_name(3) + ".time")).read_text() == "754\n"
+    put(emu, 5, "old 5", age=50)  # from before play time was counted
     slots = savestates.slots(emu, game)
     assert slots[3].played == 754 and slots[5].played is None
     assert savestates.capture(emu, game, 5, fake, sleep=lambda s: None, played=10)  # RetroArch saved into its slot 0
@@ -378,23 +453,23 @@ def test_play_time_is_kept_with_its_state(emu, game):
     assert savestates.slots(emu, game)[3].played is None
     from gamingcrypt.emulation import removal
 
-    assert "Super Mario World.state5.time" in {f.name for f in removal.save_files(emu, game)}
+    assert slot_name(5) + ".time" in {f.name for f in removal.save_files(emu, game)}
 
 
 def test_play_time_moves_with_a_state_that_is_tidied_up(emu, game):
-    write(emu, "Super Mario World.state30", "s30", folder="Snes9x")
-    (emu.states / "Snes9x" / "Super Mario World.state30.time").write_text("3600\n")
+    write(emu, "Super Mario World.state", "s0")
+    (emu.states / "Super Mario World.state.time").write_text("3600\n")
     slots = savestates.slots(emu, game)
-    assert slots[0].path.read_text() == "s30" and slots[0].played == 3600
+    assert slots[8].path.read_text() == "s0" and slots[8].played == 3600
 
 
 def test_play_time_is_shown_below_the_date(qtbot, host, emu, game):
     from gamingcrypt.ui.save_states import SaveStatesPage
 
-    write(emu, "Super Mario World.state")
-    picture(emu.states / "Super Mario World.state.png")
-    (emu.states / "Super Mario World.state.time").write_text("7500\n")
-    write(emu, "Super Mario World.state1")
+    put(emu, 0)
+    picture(emu.states / (slot_name(0) + ".png"))
+    (emu.states / (slot_name(0) + ".time")).write_text("7500\n")
+    put(emu, 1)
     page = SaveStatesPage(savestates.slots(emu, game), "load", parent=host)
     page.show()
     host.grab()
@@ -425,14 +500,14 @@ def test_play_time_counts_from_the_start_and_from_a_loaded_state(qtbot, window, 
     menu.save_state_button.click()
     window.menu_page.tiles[1].tapped.emit()
     qtbot.waitUntil(lambda: ("saved", 1, 900) in fake.sent)
-    write(emu, "Super Mario World.state4")
-    (emu.states / "Super Mario World.state4.time").write_text("7200\n")  # two hours in
+    put(emu, 4)
+    (emu.states / (slot_name(4) + ".time")).write_text("7200\n")  # two hours in
     window.toggle_quick_menu()
     menu.load_state_button.click()
     window.menu_page.tiles[4].tapped.emit()
     clock["now"] += 60
     assert window.state_played() == 7260
-    write(emu, "Super Mario World.state7")  # a state without a time: counted from loading it
+    put(emu, 7)  # a state without a time: counted from loading it
     window.toggle_quick_menu()
     menu.load_state_button.click()
     window.menu_page.tiles[7].tapped.emit()
