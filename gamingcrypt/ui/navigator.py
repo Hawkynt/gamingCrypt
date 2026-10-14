@@ -4,7 +4,8 @@ Widgets can take over input with optional hooks:
 ``gamepad_direction(dx, dy) -> bool``, ``gamepad_activate() -> bool``,
 ``gamepad_navigate(current, dx, dy) -> QWidget | None`` (on an ancestor: its own layout's order),
 ``gamepad_back() -> bool`` (also on ancestors), ``gamepad_start() -> bool``, ``gamepad_north() -> bool``
-(Y) and ``gamepad_west() -> bool`` (X), also on ancestors.
+(Y, the top button) and ``gamepad_west() -> bool`` (X / Square, the left one), also on ancestors.
+The pad comes in Xbox 360 (xpad) layout: X is BTN_NORTH (0x133), Y is BTN_WEST (0x134) - see input/profile.
 """
 
 from __future__ import annotations
@@ -101,7 +102,8 @@ class GamepadNavigator(QObject):
             self.window.activateWindow()
         if ev_type == e.EV_KEY and value == 1:
             action = {e.BTN_SOUTH: self.activate, e.BTN_EAST: self.back, e.BTN_START: self.start,
-                      e.BTN_NORTH: lambda: self.hook("gamepad_north"), e.BTN_WEST: lambda: self.hook("gamepad_west"),
+                      # xpad layout: BTN_NORTH is X (the left button), BTN_WEST is Y (the top one)
+                      e.BTN_NORTH: lambda: self.hook("gamepad_west"), e.BTN_WEST: lambda: self.hook("gamepad_north"),
                       e.BTN_TL: lambda: self.switch_tab(-1), e.BTN_TR: lambda: self.switch_tab(1),
                       e.BTN_TL2: lambda: self.page(-1), e.BTN_TR2: lambda: self.page(1)}.get(code)
             if action is not None:

@@ -52,17 +52,17 @@ def test_y_on_a_game_card_or_page(qtbot, tmp_path):
     card = tab.home.cards[5]
     nav.focus(card)
     assert "Ⓨ  Picture" in hints_for(card)
-    press(nav, e.BTN_NORTH)
+    press(nav, e.BTN_WEST)  # Y (xpad layout)
     picker = tab.currentWidget()
     assert isinstance(picker, CoverPicker) and picker.item.appid == 5
     assert "Ⓨ" not in hints_for(picker.search)  # nothing more to pick a picture for in there
-    press(nav, e.BTN_NORTH)
+    press(nav, e.BTN_WEST)  # Y (xpad layout)
     assert tab.currentWidget() is picker  # Y in the picker opens no second one
     tab.back()
     tab.open_game(5)
     page = tab.currentWidget()
     nav.focus(page.main_button)
-    press(nav, e.BTN_NORTH)
+    press(nav, e.BTN_WEST)  # Y (xpad layout)
     assert isinstance(tab.currentWidget(), CoverPicker)
 
 
@@ -71,7 +71,7 @@ def test_y_elsewhere_does_nothing(qtbot, tmp_path):
     nav = GamepadNavigator(tab)
     nav.focus(tab.home.search)
     assert "Ⓨ" not in hints_for(tab.home.search)
-    press(nav, e.BTN_NORTH)
+    press(nav, e.BTN_WEST)  # Y (xpad layout)
     assert tab.currentWidget() is tab.home
 
 
@@ -81,7 +81,7 @@ def test_y_on_a_movie(qtbot, movies_root):  # noqa: F811
     card = next(iter(tab.home.cards.values()))
     nav.focus(card)
     assert "Ⓨ  Picture" in hints_for(card)
-    press(nav, e.BTN_NORTH)
+    press(nav, e.BTN_WEST)  # Y (xpad layout)
     assert isinstance(tab.currentWidget(), CoverPicker) and tab.currentWidget().item.key == card.movie.key
 
 
@@ -111,13 +111,13 @@ def test_x_puts_a_game_in_favorites_from_its_card_and_page(qtbot, tmp_path):
     tab.window().notify = lambda text, icon="": shown.append(text)
     nav = GamepadNavigator(tab)
     nav.focus(tab.home.cards[5])
-    press(nav, e.BTN_WEST)
+    press(nav, e.BTN_NORTH)  # X (xpad layout)
     assert tab.profiles.is_favorite(5) and shown == ["Racer: added to Favorites"]
     assert tab.home.favorites_card.subtitle.text().startswith("1")
     tab.open_game(5)
     page = tab.currentWidget()
     nav.focus(page.main_button)
-    press(nav, e.BTN_WEST)
+    press(nav, e.BTN_NORTH)  # X (xpad layout)
     assert not tab.profiles.is_favorite(5) and not page.favorite_button.isChecked()  # the page shows it
     assert shown[-1] == "Racer: removed from Favorites"
 
@@ -128,7 +128,7 @@ def test_x_marks_a_movie_watched(qtbot, movies_root):  # noqa: F811
     card = next(c for c in tab.home.cards.values() if c.movie.title == "The Matrix")
     assert not card.movie.info.watched
     nav.focus(card)
-    press(nav, e.BTN_WEST)
+    press(nav, e.BTN_NORTH)  # X (xpad layout)
     qtbot.waitUntil(lambda: next(m for m in tab.movies if m.title == "The Matrix").info.watched)
 
 
@@ -140,7 +140,7 @@ def test_x_on_an_episode_and_a_show(qtbot, shows_root):  # noqa: F811
     dark = next(c for c in tab.home.cards.values() if c.movie.title == "Dark")
     assert hints_for(dark).startswith("Ⓐ  Open show     Ⓧ  Watched")
     nav.focus(dark)
-    press(nav, e.BTN_WEST)  # all watched before: now none
+    press(nav, e.BTN_NORTH)  # X (xpad layout)  # all watched before: now none
     qtbot.waitUntil(lambda: next(s for s in tab.shows if s.title == "Dark").unwatched == 2)
     show = next(s for s in tab.shows if s.title == "Breaking Bad")
     tab.open_show(show)
@@ -149,6 +149,6 @@ def test_x_on_an_episode_and_a_show(qtbot, shows_root):  # noqa: F811
     assert hints_for(row).startswith("Ⓐ  Play     Ⓧ  Watched")
     key = row.episode.key
     nav.focus(row)
-    press(nav, e.BTN_WEST)
+    press(nav, e.BTN_NORTH)  # X (xpad layout)
     qtbot.waitUntil(lambda: any(ep.key == key and ep.info.watched
                                 for s in tab.shows for ep in s.episodes))

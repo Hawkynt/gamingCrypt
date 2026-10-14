@@ -29,7 +29,7 @@ class InputService:
 
     def profile(self, device: e.DeviceInfo) -> Profile:
         data = self.cfg["profiles"].get(device.key)
-        return Profile.from_dict(data) if data else default_profile(device.keys, device.axes)
+        return Profile.from_dict(data) if data else default_profile(device.keys, device.axes, device.vendor)
 
     def save_profile(self, device: e.DeviceInfo, profile: Profile) -> None:
         self.cfg["profiles"][device.key] = profile.to_dict()

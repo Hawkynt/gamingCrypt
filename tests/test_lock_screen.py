@@ -243,7 +243,7 @@ def test_dot_grid_with_the_controller_buttons(qtbot):
     for _ in range(3):
         press(e.BTN_SOUTH)
     assert len(host.nodes) == 3
-    press(e.BTN_WEST)
+    press(e.BTN_NORTH)  # X (xpad layout: the left button)
     assert len(host.nodes) == 2 and host.display.text() == "●●"
     with qtbot.waitSignal(host.submitted) as blocker:
         press(e.BTN_EAST)

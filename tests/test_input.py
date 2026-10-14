@@ -296,3 +296,38 @@ def test_remapper_reports_open_errors():
 
     r = Remapper(PAD, default_profile(KEYS, AXES), open_device=fail)
     assert not r.start() and "Permission denied" in r.error
+
+
+def test_playstation_and_nintendo_pads_get_the_xbox_layout():
+    """Their left button (Square / Y) is BTN_WEST - passed on as X (BTN_NORTH, xpad), like an Xbox pad's."""
+    from gamingcrypt.input.profile import Translator
+
+    for vendor in ("054c", "057E"):
+        p = default_profile(KEYS, AXES, vendor)
+        assert p.buttons["x"] == Source("key", e.BTN_WEST) and p.buttons["y"] == Source("key", e.BTN_NORTH)
+    xbox = default_profile(KEYS, AXES, "045e")
+    assert xbox.buttons["x"] == Source("key", e.BTN_NORTH) and xbox.buttons["y"] == Source("key", e.BTN_WEST)
+    t = Translator(default_profile(KEYS, AXES, "054c"), {})
+    t.feed(e.EV_KEY, e.BTN_WEST, 1)
+    assert (e.EV_KEY, e.BTN_NORTH, 1) in t.feed(e.EV_SYN, e.SYN_REPORT, 0)  # Square -> X
+
+
+def test_x_and_y_reach_their_hooks():
+    """xpad: X (the left button) is BTN_NORTH, Y (the top one) BTN_WEST."""
+    from PySide6.QtWidgets import QApplication, QPushButton
+
+    from gamingcrypt.ui.navigator import GamepadNavigator
+
+    QApplication.instance() or QApplication([])
+    calls = []
+    window = QPushButton()
+    window.gamepad_west = lambda: calls.append("west (X)") or True
+    window.gamepad_north = lambda: calls.append("north (Y)") or True
+    window.show()
+    nav = GamepadNavigator(window)
+    window.setFocus()
+    for code in (e.BTN_NORTH, e.BTN_WEST):
+        nav.on_event(e.EV_KEY, code, 1)
+        nav.on_event(e.EV_KEY, code, 0)
+    assert calls == ["west (X)", "north (Y)"]
+    window.close()

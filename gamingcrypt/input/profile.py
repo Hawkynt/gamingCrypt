@@ -125,12 +125,21 @@ class Profile:
         )
 
 
-def default_profile(keys: set[int], axes: set[int]) -> Profile:
+# Drivers that follow the kernel's own layout (hid-playstation, hid-nintendo): the left face button
+# (Square, Y) is BTN_WEST and the top one BTN_NORTH - xpad (Xbox pads, built-in pads of handhelds)
+# has them the other way round, and that's the layout passed on (the virtual pad is an Xbox 360 one).
+POSITIONAL_VENDORS = {"054c", "057e"}  # Sony, Nintendo
+
+
+def default_profile(keys: set[int], axes: set[int], vendor: str = "") -> Profile:
     """A sensible starting point from what the controller reports."""
     buttons: dict[str, Source] = {}
     for name, _label, output in BUTTONS:
         if isinstance(output, int) and output in keys:
             buttons[name] = Source("key", output)
+    if vendor.lower() in POSITIONAL_VENDORS and {e.BTN_NORTH, e.BTN_WEST} <= keys:
+        # the left button is X (Square), the top one Y (Triangle) - as on an Xbox pad
+        buttons.update(x=Source("key", e.BTN_WEST), y=Source("key", e.BTN_NORTH))
     if e.ABS_HAT0X in axes:
         buttons.update(dpad_left=Source("abs", e.ABS_HAT0X, -1), dpad_right=Source("abs", e.ABS_HAT0X, 1),
                        dpad_up=Source("abs", e.ABS_HAT0Y, -1), dpad_down=Source("abs", e.ABS_HAT0Y, 1))
