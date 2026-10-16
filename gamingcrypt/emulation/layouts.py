@@ -38,6 +38,7 @@ CONSOLES: dict[str, dict[str, str]] = {
              "−": "select", "+": "start", "L3": "l3", "R3": "r3"},
     "mastersystem": {"1": "b", "2": "a", "Pause": "start"},
     "megadrive": {"A": "y", "B": "b", "C": "a", "X": "l", "Y": "x", "Z": "r", "Mode": "select", "Start": "start"},
+    "sega32x": {"A": "y", "B": "b", "C": "a", "X": "l", "Y": "x", "Z": "r", "Mode": "select", "Start": "start"},
     "gamegear": {"1": "b", "2": "a", "Start": "start"},
     "segacd": {"A": "y", "B": "b", "C": "a", "X": "l", "Y": "x", "Z": "r", "Mode": "select", "Start": "start"},
     "saturn": {"A": "b", "B": "a", "C": "r2", "X": "y", "Y": "x", "Z": "l2", "L": "l", "R": "r",

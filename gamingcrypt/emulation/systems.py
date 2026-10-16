@@ -47,6 +47,8 @@ SYSTEMS: tuple[System, ...] = (
     System("mastersystem", "Sega Master System", (".sms",) + ARCHIVES, ("genesis_plus_gx", "picodrive")),
     System("megadrive", "Sega Mega Drive / Genesis", (".md", ".gen", ".smd", ".bin") + ARCHIVES,
            ("genesis_plus_gx", "picodrive")),
+    # the Mega Drive's add-on: PicoDrive (it needs no BIOS for it), the Mega Drive's 6-button pad
+    System("sega32x", "Sega 32X", (".32x",) + ARCHIVES, ("picodrive",)),
     System("gamegear", "Sega Game Gear", (".gg",) + ARCHIVES, ("genesis_plus_gx",)),
     System("segacd", "Sega CD", (".cue", ".chd", ".iso", ".m3u"), ("genesis_plus_gx",),
            ("bios_CD_U.bin", "bios_CD_E.bin", "bios_CD_J.bin")),
@@ -71,7 +73,7 @@ SHORT = {"nes": "NES", "snes": "SNES", "n64": "N64", "gb": "Game Boy", "gbc": "G
          "gba": "GBA", "nds": "Nintendo DS", "gc": "GameCube", "mastersystem": "Master System",
          "megadrive": "Mega Drive", "gamegear": "Game Gear", "segacd": "Sega CD", "saturn": "Saturn",
          "dreamcast": "Dreamcast", "psx": "PS1", "ps2": "PS2", "psp": "PSP", "pce": "PC Engine",
-         "atari2600": "Atari 2600", "arcade": "Arcade", "switch": "Switch", "3ds": "3DS", "wii": "Wii",
+         "atari2600": "Atari 2600", "arcade": "Arcade", "switch": "Switch", "sega32x": "32X", "3ds": "3DS", "wii": "Wii",
          "wiiu": "Wii U"}
 
 

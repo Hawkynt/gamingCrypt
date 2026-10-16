@@ -148,6 +148,7 @@ PICTURES["wiiu"] = Picture("landscape", {**_face("X", "Y", "A", "B", 820, 300, 5
                            dpad=(180, 330), sticks=((180, 200), (820, 170)), screen=(330, 130, 340, 260))
 PICTURES["gbc"] = PICTURES["gb"]
 PICTURES["segacd"] = PICTURES["megadrive"]
+PICTURES["sega32x"] = PICTURES["megadrive"]
 GENERIC = Picture("pad", {**_face("X", "Y", "A", "B"), "L": (250, 115, "shoulder"), "R": (750, 115, "shoulder"),
                           "L2": (250, 55, "shoulder"), "R2": (750, 55, "shoulder"), "L3": (390, 440, "face"),
                           "R3": (610, 440, "face"), **SELECT_START})

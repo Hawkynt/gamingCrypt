@@ -20,7 +20,7 @@ NATIVE = {"nes": (256, 240), "snes": (256, 224), "n64": (320, 240), "gb": (160, 
           "gba": (240, 160), "nds": (256, 192), "gc": (640, 480), "mastersystem": (256, 192),
           "megadrive": (320, 224), "gamegear": (160, 144), "segacd": (320, 224), "saturn": (320, 224),
           "dreamcast": (640, 480), "psx": (320, 240), "ps2": (640, 448), "psp": (480, 272), "pce": (256, 224),
-          "atari2600": (160, 192), "arcade": (320, 240), "3ds": (400, 240), "wii": (640, 480),
+          "atari2600": (160, 192), "arcade": (320, 240), "sega32x": (320, 224), "3ds": (400, 240), "wii": (640, 480),
           "wiiu": (1280, 720)}
 MAX_WIDTH = 320  # bigger pictures (3D consoles) are drawn at this width - the preview is small
 FORMAT = QImage.Format.Format_RGB32

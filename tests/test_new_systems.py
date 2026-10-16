@@ -133,3 +133,18 @@ def test_no_save_states_in_the_quick_menu_for_wii_u(qtbot):
     assert not menu.state_row.isVisibleTo(menu) and menu.controls_row.isVisibleTo(menu)
     menu.set_emulated(True, 1.0)
     assert menu.state_row.isVisibleTo(menu)
+
+
+def test_sega_32x(paths, tmp_path):
+    """Through PicoDrive (no BIOS needed), with the Mega Drive's 6-button pad."""
+    from gamingcrypt.ui import console_pictures
+
+    system = BY_ID["sega32x"]
+    assert system.cores == ("picodrive",) and short_name("sega32x") == "32X"
+    assert PLAYLISTS["sega32x"] == "Sega - 32X" and "sega32x" not in bios.REQUIREMENTS
+    assert layouts.console("sega32x") == layouts.console("megadrive")
+    assert set(layouts.console("sega32x")) <= set(console_pictures.picture("sega32x").buttons)
+    (paths.roms_for(system) / "Knuckles Chaotix.32x").write_text("x")
+    (paths.cores / "picodrive_libretro.so").write_text("x")
+    game, _config = launch(paths, tmp_path, "sega32x", "Virtua Racing Deluxe.32x")
+    assert [g.name for g in scan(paths, system)] == ["Knuckles Chaotix", "Virtua Racing Deluxe"]

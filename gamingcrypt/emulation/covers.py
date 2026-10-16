@@ -31,7 +31,7 @@ PLAYLISTS = {
     "dreamcast": "Sega - Dreamcast", "psx": "Sony - PlayStation", "ps2": "Sony - PlayStation 2",
     "psp": "Sony - PlayStation Portable", "switch": "Nintendo - Nintendo Switch",
     "pce": "NEC - PC Engine - TurboGrafx 16", "atari2600": "Atari - 2600", "arcade": "MAME",
-    "3ds": "Nintendo - Nintendo 3DS", "wii": "Nintendo - Wii", "wiiu": "Nintendo - Wii U",
+    "sega32x": "Sega - 32X", "3ds": "Nintendo - Nintendo 3DS", "wii": "Nintendo - Wii", "wiiu": "Nintendo - Wii U",
 }
 REGIONS = ("(USA)", "(Europe)", "(World)", "(USA, Europe)", "(Japan)")
 MISS_DAYS = 7
