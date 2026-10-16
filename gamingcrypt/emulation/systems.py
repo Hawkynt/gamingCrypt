@@ -16,10 +16,12 @@ class System:
     video: str = ""  # RetroArch video driver the core needs ("": RetroArch's own choice)
     save_states: bool = True  # the core can save states (Cemu can't)
     extra: tuple[tuple[str, str], ...] = ()  # RetroArch settings for its games (e.g. which controller)
+    folder_name: str = ""  # its folder in roms/ ("": its id)
+    also_in: tuple[str, ...] = ()  # other folder names its games are found in too
 
     @property
     def folder(self) -> str:
-        return self.id
+        return self.folder_name or self.id
 
 
 ARCHIVES = (".zip", ".7z")
@@ -48,7 +50,8 @@ SYSTEMS: tuple[System, ...] = (
     System("megadrive", "Sega Mega Drive / Genesis", (".md", ".gen", ".smd", ".bin") + ARCHIVES,
            ("genesis_plus_gx", "picodrive")),
     # the Mega Drive's add-on: PicoDrive (it needs no BIOS for it), the Mega Drive's 6-button pad
-    System("sega32x", "Sega 32X", (".32x",) + ARCHIVES, ("picodrive",)),
+    System("sega32x", "Sega 32X", (".32x",) + ARCHIVES, ("picodrive",), folder_name="32x",
+           also_in=("sega32x",)),
     System("gamegear", "Sega Game Gear", (".gg",) + ARCHIVES, ("genesis_plus_gx",)),
     System("segacd", "Sega CD", (".cue", ".chd", ".iso", ".m3u"), ("genesis_plus_gx",),
            ("bios_CD_U.bin", "bios_CD_E.bin", "bios_CD_J.bin")),

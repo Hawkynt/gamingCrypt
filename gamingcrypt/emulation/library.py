@@ -115,10 +115,13 @@ def write_playlist(paths: EmulationPaths, system: System, title: str, discs: lis
 
 
 def scan(paths: EmulationPaths, system: System) -> list[RomGame]:
-    folder = paths.roms_for(system)
-    try:
-        files = [f for f in folder.iterdir() if f.is_file() and f.suffix.lower() in system.extensions]
-    except OSError:
+    files = []
+    for folder in [paths.roms_for(system)] + [paths.root / "roms" / name for name in system.also_in]:
+        try:
+            files += [f for f in folder.iterdir() if f.is_file() and f.suffix.lower() in system.extensions]
+        except OSError:
+            pass  # (not there)
+    if not files:
         return []
     hidden: set[str] = set()
     for f in files:

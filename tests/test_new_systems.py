@@ -148,3 +148,18 @@ def test_sega_32x(paths, tmp_path):
     (paths.cores / "picodrive_libretro.so").write_text("x")
     game, _config = launch(paths, tmp_path, "sega32x", "Virtua Racing Deluxe.32x")
     assert [g.name for g in scan(paths, system)] == ["Knuckles Chaotix", "Virtua Racing Deluxe"]
+
+
+def test_32x_games_in_roms_32x(paths, tmp_path):
+    """Was: only roms/sega32x was looked at - a game in roms/32x (the usual name) wasn't shown."""
+    from gamingcrypt.arrivals import Watcher
+
+    system = BY_ID["sega32x"]
+    assert paths.roms_for(system) == paths.root / "roms" / "32x"
+    (paths.root / "roms" / "32x").mkdir(exist_ok=True)
+    (paths.root / "roms" / "32x" / "Knuckles' Chaotix (Europe).32x").write_text("x")
+    (paths.root / "roms" / "sega32x").mkdir()
+    (paths.root / "roms" / "sega32x" / "Virtua Racing Deluxe.32x").write_text("x")  # also there
+    assert [g.name for g in scan(paths, system)] == ["Knuckles' Chaotix", "Virtua Racing Deluxe"]
+    folders = {folder for kind, folder, _s in Watcher(paths.root.parent).folders() if kind == "rom"}
+    assert {paths.root / "roms" / "32x", paths.root / "roms" / "sega32x"} <= folders

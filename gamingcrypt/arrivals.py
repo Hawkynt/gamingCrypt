@@ -60,7 +60,8 @@ class Watcher:
         """(kind, folder, system) for every folder whose entries are things."""
         from gamingcrypt.emulation.systems import SYSTEMS, short_name
 
-        found = [("rom", self.drive / "Emulation" / "roms" / s.id, short_name(s.id)) for s in SYSTEMS]
+        found = [("rom", self.drive / "Emulation" / "roms" / name, short_name(s.id))
+                 for s in SYSTEMS for name in (s.folder, *s.also_in)]
         found += [("windows", self.drive / "Windows Games", ""), ("linux", self.drive / "Linux Games", ""),
                   ("movie", self.drive / "Movies", ""), ("show", self.drive / "Shows", "")]
         return found
