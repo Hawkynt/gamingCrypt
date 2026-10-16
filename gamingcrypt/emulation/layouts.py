@@ -44,8 +44,9 @@ CONSOLES: dict[str, dict[str, str]] = {
                "Start": "start"},
     "dreamcast": {"A": "b", "B": "a", "X": "y", "Y": "x", "L trigger": "l2", "R trigger": "r2",
                   "Start": "start"},
+    # the first PlayStation pad: no sticks, so no L3 / R3
     "psx": {"Cross": "b", "Circle": "a", "Square": "y", "Triangle": "x", "L1": "l", "R1": "r", "L2": "l2",
-            "R2": "r2", "L3": "l3", "R3": "r3", "Select": "select", "Start": "start"},
+            "R2": "r2", "Select": "select", "Start": "start"},
     "ps2": {"Cross": "b", "Circle": "a", "Square": "y", "Triangle": "x", "L1": "l", "R1": "r", "L2": "l2",
             "R2": "r2", "L3": "l3", "R3": "r3", "Select": "select", "Start": "start"},
     "psp": {"Cross": "b", "Circle": "a", "Square": "y", "Triangle": "x", "L": "l", "R": "r", "Select": "select",

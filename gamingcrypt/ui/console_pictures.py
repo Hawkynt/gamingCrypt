@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QTransform
 
 from gamingcrypt.ui import theme
 
@@ -27,6 +27,10 @@ class Picture:
     sticks: tuple[tuple[int, int], ...] = ()
     screen: tuple[int, int, int, int] | None = None  # x, y, w, h
     colors: dict[str, str] = field(default_factory=dict)  # console button -> its color
+    # drawn only (not buttons): ("well", x, y, r) - a hollow the buttons sit in;
+    # ("dot", x, y, r, color[, text]) - e.g. the C buttons that aren't their own; ("led", x, y, r, color)
+    decor: tuple[tuple, ...] = ()
+    split_dpad: bool = False  # PlayStation: four separate arrows, not one cross
 
 
 def _face(top: str, left: str, right: str, bottom: str, x: int = 750, y: int = 300, d: int = 72) -> dict:
@@ -44,13 +48,16 @@ PICTURES: dict[str, Picture] = {
                    colors={"A": "#c8323c", "B": "#c8323c"}),
     "snes": Picture("pad", {**_face("X", "Y", "A", "B"), "L": (250, 105, "shoulder"),
                             "R": (750, 105, "shoulder"), **SELECT_START}, colors=SNES_COLORS),
-    "n64": Picture("trident", {"A": (720, 340, "big"), "B": (640, 285, "face"),
-                               "C-Left": (760, 225, "c"), "C-Down": (820, 275, "c"),
-                               "C-buttons (stick)": (850, 165, "small"), "Start": (500, 250, "face"),
-                               "Z": (500, 500, "small"), "L": (215, 95, "shoulder"), "R": (785, 95, "shoulder")},
-                   dpad=(220, 260), sticks=((500, 380),), colors={"A": "#3b5fd0", "B": "#2e9b4f",
-                                                                  "C-Left": "#d6b52a", "C-Down": "#d6b52a",
-                                                                  "Start": "#c8323c"}),
+    # three grips: the D-pad on the left one, the stick on the middle one (Z behind it), A, B
+    # and the four yellow C buttons on the right
+    "n64": Picture("n64", {"A": (675, 345, "big"), "B": (600, 285, "face"),
+                           "C-Left": (750, 255, "c"), "C-Down": (805, 308, "c"),
+                           "C-buttons (stick)": (835, 395, "small"), "Start": (500, 235, "face"),
+                           "Z": (500, 510, "small"), "L": (215, 95, "shoulder"), "R": (785, 95, "shoulder")},
+                   dpad=(215, 250), sticks=((500, 380),),
+                   colors={"A": "#3b5fd0", "B": "#2e9b4f", "C-Left": "#d6b52a", "C-Down": "#d6b52a",
+                           "Start": "#c8323c"},
+                   decor=(("dot", 805, 202, 25, "#d6b52a", "C▲"), ("dot", 860, 255, 25, "#d6b52a", "C▶"))),
     "gb": Picture("portrait", {"B": (575, 400, "face"), "A": (655, 355, "face"),
                                "Select": (450, 480, "small"), "Start": (555, 480, "small")},
                   dpad=(410, 385), screen=(370, 60, 260, 230), colors={"A": "#a3245a", "B": "#a3245a"}),
@@ -83,10 +90,22 @@ PICTURES: dict[str, Picture] = {
                                  "R trigger": (750, 105, "shoulder"), "Start": (500, 420, "small")},
                          dpad=(250, 380), sticks=((260, 230),),
                          colors={"A": "#c8323c", "B": "#3b5fd0", "X": "#d6b52a", "Y": "#2e9b4f"}),
-    "psx": Picture("pad", {**_face("Triangle", "Square", "Circle", "Cross"), "L1": (250, 115, "shoulder"),
-                           "R1": (750, 115, "shoulder"), "L2": (250, 55, "shoulder"), "R2": (750, 55, "shoulder"),
-                           "L3": (390, 440, "face"), "R3": (610, 440, "face"), **SELECT_START},
-                   colors=PS_COLORS),
+    # the first PlayStation pad: no sticks - the DualShock 2 below has them (and L3 / R3)
+    "psx": Picture("psx", {"Triangle": (760, 200, "face"), "Square": (690, 270, "face"),
+                                 "Circle": (830, 270, "face"), "Cross": (760, 340, "face"),
+                                 "L1": (230, 105, "shoulder"), "R1": (770, 105, "shoulder"),
+                                 "L2": (230, 48, "shoulder"), "R2": (770, 48, "shoulder"),
+                                 "Select": (440, 300, "small"), "Start": (560, 300, "small")},
+                   dpad=(235, 270), colors=PS_COLORS, split_dpad=True,
+                   decor=(("well", 235, 270, 105), ("well", 760, 270, 108))),
+    "ps2": Picture("dualshock", {"Triangle": (760, 200, "face"), "Square": (690, 270, "face"),
+                                 "Circle": (830, 270, "face"), "Cross": (760, 340, "face"),
+                                 "L1": (230, 105, "shoulder"), "R1": (770, 105, "shoulder"),
+                                 "L2": (230, 48, "shoulder"), "R2": (770, 48, "shoulder"),
+                                 "L3": (370, 400, "face"), "R3": (630, 400, "face"),
+                                 "Select": (440, 270, "small"), "Start": (560, 270, "small")},
+                   dpad=(235, 270), sticks=((370, 400), (630, 400)), colors=PS_COLORS, split_dpad=True,
+                   decor=(("well", 235, 270, 105), ("well", 760, 270, 108), ("led", 500, 330, 9, "#c8323c"))),
     "psp": Picture("landscape", {**_face("Triangle", "Square", "Circle", "Cross", 800, 270, 62),
                                  "L": (190, 95, "shoulder"), "R": (810, 95, "shoulder"),
                                  "Select": (560, 450, "small"), "Start": (680, 450, "small")},
@@ -124,7 +143,6 @@ PICTURES["wiiu"] = Picture("landscape", {**_face("X", "Y", "A", "B", 820, 300, 5
                                          "R3": (880, 450, "small")},
                            dpad=(180, 330), sticks=((180, 200), (820, 170)), screen=(330, 130, 340, 260))
 PICTURES["gbc"] = PICTURES["gb"]
-PICTURES["ps2"] = PICTURES["psx"]
 PICTURES["segacd"] = PICTURES["megadrive"]
 GENERIC = Picture("pad", {**_face("X", "Y", "A", "B"), "L": (250, 115, "shoulder"), "R": (750, 115, "shoulder"),
                           "L2": (250, 55, "shoulder"), "R2": (750, 55, "shoulder"), "L3": (390, 440, "face"),
@@ -142,8 +160,10 @@ def dpad_buttons(pic: Picture) -> dict[str, tuple[int, int, str]]:
 
 
 def picture(system_id: str) -> Picture:
+    from dataclasses import replace
+
     pic = PICTURES.get(system_id, GENERIC)
-    return Picture(pic.body, {**dpad_buttons(pic), **pic.buttons}, pic.dpad, pic.sticks, pic.screen, pic.colors)
+    return replace(pic, buttons={**dpad_buttons(pic), **pic.buttons})
 
 
 def button_text(name: str) -> str:
@@ -159,6 +179,12 @@ def _body(shape: str) -> QPainterPath:
         part.addRoundedRect(QRectF(x, y, w, h), r, r)
         parts.append(part)
 
+    def rotated(cx, cy, w, h, r, degrees):
+        """A rounded upright part around its centre, turned (the grips spread outwards)."""
+        part = QPainterPath()
+        part.addRoundedRect(QRectF(-w / 2, -h / 2, w, h), r, r)
+        parts.append(QTransform().translate(cx, cy).rotate(degrees).map(part))
+
     def circle(x, y, r):
         part = QPainterPath()
         part.addEllipse(QPointF(x, y), r, r)
@@ -170,6 +196,20 @@ def _body(shape: str) -> QPainterPath:
         circle(750, 320, 175)
     elif shape == "rect":
         rounded(110, 160, 780, 300, 30)
+    elif shape == "n64":
+        top = QPainterPath()
+        top.addEllipse(QPointF(500, 255), 435, 150)
+        parts.append(top)
+        rounded(110, 150, 780, 200, 90)
+        rotated(205, 400, 175, 300, 85, 10)
+        rotated(795, 400, 175, 300, 85, -10)
+        rounded(410, 300, 180, 250, 90)
+    elif shape in ("dualshock", "psx"):  # the front with the two long grips (DualShock: the sticks between)
+        rounded(125, 140, 750, 240, 110)
+        if shape == "dualshock":
+            rounded(285, 290, 430, 200, 90)
+        rotated(210, 375, 190, 345, 95, 17)
+        rotated(790, 375, 190, 345, 95, -17)
     elif shape == "trident":
         rounded(90, 130, 820, 230, 110)
         for x in (220, 500, 780):
@@ -195,6 +235,11 @@ def paint(painter: QPainter, pic: Picture, body: str = theme.SURFACE_HI, outline
     painter.setBrush(QColor(body))
     painter.drawPath(_body(pic.body))
     painter.setPen(Qt.PenStyle.NoPen)
+    for item in pic.decor:
+        if item[0] == "well":
+            _kind, x, y, r = item
+            painter.setBrush(QColor(0, 0, 0, 55))
+            painter.drawEllipse(QPointF(x, y), r, r)
     if pic.screen:
         x, y, w, h = pic.screen
         painter.setBrush(QColor("#0b0d12"))
@@ -202,7 +247,13 @@ def paint(painter: QPainter, pic: Picture, body: str = theme.SURFACE_HI, outline
         painter.setBrush(QColor("#2b3a2e"))
         painter.drawRect(QRectF(x + 20, y + 20, w - 40, h - 40))
     painter.setBrush(QColor("#11141b"))
-    if pic.dpad:
+    if pic.dpad and pic.split_dpad:
+        x, y = pic.dpad
+        for ax, ay in ((0, -1), (0, 1), (-1, 0), (1, 0)):
+            w, h = (50, 62) if ax == 0 else (62, 50)
+            cx, cy = x + ax * 52, y + ay * 52
+            painter.drawRoundedRect(QRectF(cx - w / 2, cy - h / 2, w, h), 10, 10)
+    elif pic.dpad:
         x, y = pic.dpad
         painter.drawRoundedRect(QRectF(x - 75, y - 25, 150, 50), 8, 8)
         painter.drawRoundedRect(QRectF(x - 25, y - 75, 50, 150), 8, 8)
@@ -211,3 +262,16 @@ def paint(painter: QPainter, pic: Picture, body: str = theme.SURFACE_HI, outline
         painter.drawEllipse(QPointF(x, y), 58, 58)
         painter.setBrush(QColor(theme.SURFACE))
         painter.drawEllipse(QPointF(x, y), 38, 38)
+    for item in pic.decor:
+        if item[0] in ("dot", "led"):
+            _kind, x, y, r, color, *text = item
+            painter.setBrush(QColor(color))
+            painter.drawEllipse(QPointF(x, y), r, r)
+            if text:  # as the buttons write it (e.g. "C▲")
+                font = painter.font()
+                font.setPixelSize(int(r * 0.85))
+                font.setBold(True)
+                painter.setFont(font)
+                painter.setPen(QColor(theme.TEXT))
+                painter.drawText(QRectF(x - r, y - r, 2 * r, 2 * r), Qt.AlignmentFlag.AlignCenter, text[0])
+                painter.setPen(Qt.PenStyle.NoPen)

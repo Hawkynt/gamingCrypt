@@ -227,3 +227,17 @@ def test_dpad_can_be_changed(qtbot, store):
     assert page.on_event(e.EV_ABS, e.ABS_HAT0Y, 1)  # D-pad down on the controller
     assert store.get("snes") == {"down": "Up", "up": "Down"}
     assert 'input_player1_btn_down = "4"' in layouts.remap_lines("snes", store.get("snes"))
+
+
+def test_playstation_pads_as_they_were():
+    """The first PlayStation pad had no sticks (no L3 / R3); the DualShock 2 has them - and the
+    N64 pad shows all four C buttons, two of them only drawn."""
+    from gamingcrypt.emulation import layouts
+    from gamingcrypt.ui import console_pictures
+
+    ps1, ps2 = console_pictures.picture("psx"), console_pictures.picture("ps2")
+    assert not ps1.sticks and "L3" not in layouts.console("psx") and "L3" not in ps1.buttons
+    assert len(ps2.sticks) == 2 and {"L3", "R3"} <= set(layouts.console("ps2")) <= set(ps2.buttons)
+    assert ps1.split_dpad and ps2.split_dpad and any(d[0] == "led" for d in ps2.decor)
+    n64 = console_pictures.picture("n64")
+    assert n64.body == "n64" and {d[-1] for d in n64.decor if d[0] == "dot"} == {"C▲", "C▶"}
