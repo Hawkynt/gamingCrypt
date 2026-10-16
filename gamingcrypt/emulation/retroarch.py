@@ -211,6 +211,9 @@ WIDESCREEN = {"pcsx2": {"16:9": {"pcsx2_widescreen_hint": "enabled (16:9)"},
 # images) or paraLLEl-GS (like a real PS2, about a third as fast; needs RetroArch's Vulkan driver)
 RENDERERS = {"pcsx2": {"accurate": {"pcsx2_renderer": "paraLLEl-GS"}, None: {"pcsx2_renderer": "OpenGL"}}}
 RENDERER_VIDEO = {"accurate": "vulkan"}
+# always: Cemu draws with Vulkan (RetroArch's Vulkan driver, see systems) - its OpenGL path is
+# black under gamescope
+FIXED_OPTIONS = {"cemu": {"cemu_gpu_api": "Vulkan"}}
 ALWAYS_OPTIONS = {"pcsx2"}  # the renderer has to match the video driver: always written
 
 
@@ -342,7 +345,7 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
         wanted = game.system.cores[0]
         return False, (f"No RetroArch core for {game.system.name} yet - add e.g. {wanted}_libretro.so "
                        "to the cores folder (⬆ Add emulator games)")
-    extra = {**speed_settings(fast, slow), **lag_settings(game.system.id, input_lag)}
+    extra = {**speed_settings(fast, slow), **lag_settings(game.system.id, input_lag), **dict(game.system.extra)}
     if in_step:  # a 50 Hz game at the screen's 60
         extra.update(IN_STEP_WITH_SCREEN)
     short = core.name.removesuffix(".so").removesuffix("_libretro")
@@ -366,6 +369,7 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
         for table, choice in choices:  # all of them explicit: an earlier choice is undone
             options.update(table[short].get(choice, table[short][None]))
         options.update(scalers.texture_options(short, scaler if textures else None, resolution))
+    options.update(FIXED_OPTIONS.get(short, {}))
     if options:  # the game's own core options file
         extra["global_core_options"] = "true"
         extra["core_options_path"] = write_core_options(core_options_file(paths, game), options)

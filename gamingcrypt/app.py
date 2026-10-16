@@ -744,7 +744,8 @@ class MainWindow(QMainWindow):
         rom = self.running_rom() if appid is not None and appid >= EMU_APPID_BASE else None
         retroarch_game = rom is not None and rom.system.emulator == "retroarch"
         speed = getattr(self, "_chosen_speed", None) or getattr(self, "speed", 1.0)  # (chosen, not applied yet)
-        menu.set_emulated(retroarch_game, speed if retroarch_game else None)
+        menu.set_emulated(retroarch_game, speed if retroarch_game else None,
+                          states=bool(retroarch_game and rom.system.save_states))
         in_step = bool(retroarch_game and self.game_profiles.get(rom.appid).get("in_step"))
         chosen = getattr(self, "_chosen_in_step", None)
         menu.set_in_step(bool(retroarch_game) and (in_step or self.running_at_50_hz()),
@@ -1050,6 +1051,14 @@ class MainWindow(QMainWindow):
         fetch = getattr(games, "core_fetcher", None)
         if fetch is not None and retroarch.available() and retroarch.find_core(paths, game.system, core) is None:
             return self.download_core_then_launch(game, paths, core, fetch)
+        from gamingcrypt.emulation import cores
+
+        found = retroarch.find_core(paths, game.system, core)
+        if fetch is not None and found is not None and cores.needs_system_files(paths, found):
+            # e.g. Dolphin's Sys folder (GameCube, Wii)
+            return self.download_then_launch(
+                game, lambda: cores.download_system_files(paths, found), f"the system files for {game.system.name}",
+                f"Couldn't download the system files for {game.system.name} - no network?")
         ok, message = self.start_retroarch(game, paths)
         if ok:
             self.start_state_clock(0)  # started without a state: played from now
@@ -1392,7 +1401,7 @@ class MainWindow(QMainWindow):
                 menu.show_speed(speed if on else getattr(self, "speed", 1.0))
 
         def save_and_stop() -> bool:
-            if not savestates.capture(paths, rom, savestates.SPARE, retroarch.send):
+            if not rom.system.save_states or not savestates.capture(paths, rom, savestates.SPARE, retroarch.send):
                 return False
             force_quit(appid)
             return True

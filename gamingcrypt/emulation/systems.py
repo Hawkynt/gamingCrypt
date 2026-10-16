@@ -14,6 +14,8 @@ class System:
     bios: tuple[str, ...] = ()  # files the cores need in bios/ (checked, never shipped)
     emulator: str = "retroarch"  # or a standalone one: "eden"
     video: str = ""  # RetroArch video driver the core needs ("": RetroArch's own choice)
+    save_states: bool = True  # the core can save states (Cemu can't)
+    extra: tuple[tuple[str, str], ...] = ()  # RetroArch settings for its games (e.g. which controller)
 
     @property
     def folder(self) -> str:
@@ -32,7 +34,16 @@ SYSTEMS: tuple[System, ...] = (
     System("gbc", "Game Boy Color", (".gbc",) + ARCHIVES, ("gambatte", "sameboy", "mgba")),
     System("gba", "Game Boy Advance", (".gba",) + ARCHIVES, ("mgba", "vba_next"), ("gba_bios.bin",)),
     System("nds", "Nintendo DS", (".nds",) + ARCHIVES, ("melonds", "desmume")),
+    System("3ds", "Nintendo 3DS", (".3ds", ".cci", ".cxi", ".3dsx", ".app", ".z3dsx", ".zcci", ".zcxi"),
+           ("azahar", "citra"), video="glcore"),
     System("gc", "GameCube", (".iso", ".gcm", ".gcz", ".rvz", ".ciso"), ("dolphin",)),
+    # Dolphin as for GameCube; the controller is a Wii Remote with Nunchuk (RetroArch's device 769 -
+    # the core's RETRO_DEVICE_WIIMOTE_NC), not a GameCube pad
+    System("wii", "Nintendo Wii", (".iso", ".wbfs", ".rvz", ".wia", ".gcz", ".ciso", ".wad"), ("dolphin",),
+           extra=(("input_libretro_device_p1", "769"),)),
+    # Cemu: draws with Vulkan (its OpenGL path is black under gamescope), can't save states;
+    # one-file games (.wua, or .wud / .wux disc images with the console's keys.txt)
+    System("wiiu", "Nintendo Wii U", (".wua", ".wud", ".wux"), ("cemu",), video="vulkan", save_states=False),
     System("mastersystem", "Sega Master System", (".sms",) + ARCHIVES, ("genesis_plus_gx", "picodrive")),
     System("megadrive", "Sega Mega Drive / Genesis", (".md", ".gen", ".smd", ".bin") + ARCHIVES,
            ("genesis_plus_gx", "picodrive")),
@@ -60,7 +71,8 @@ SHORT = {"nes": "NES", "snes": "SNES", "n64": "N64", "gb": "Game Boy", "gbc": "G
          "gba": "GBA", "nds": "Nintendo DS", "gc": "GameCube", "mastersystem": "Master System",
          "megadrive": "Mega Drive", "gamegear": "Game Gear", "segacd": "Sega CD", "saturn": "Saturn",
          "dreamcast": "Dreamcast", "psx": "PS1", "ps2": "PS2", "psp": "PSP", "pce": "PC Engine",
-         "atari2600": "Atari 2600", "arcade": "Arcade", "switch": "Switch"}
+         "atari2600": "Atari 2600", "arcade": "Arcade", "switch": "Switch", "3ds": "3DS", "wii": "Wii",
+         "wiiu": "Wii U"}
 
 
 def short_name(system_id: str) -> str:

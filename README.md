@@ -48,8 +48,10 @@ touch and controller, and can boot the device straight into a SteamOS-like gamin
 - 🔎 **Filters**: all installed games by genre, platform and release year, sorted by name, date or last played.
 - ▶️ **Continue playing**: after a start you're on the main page with the game played last
   highlighted - one press to play on.
-- 👾 **Emulation**: from NES to PS2, GameCube and Switch, through RetroArch and Eden. Cores and
-  covers are downloaded for you; shaders and upscaling are included.
+- 👾 **Emulation**: from NES to PS2, GameCube, Wii, Wii U, 3DS and Switch, through RetroArch and
+  Eden. Cores, covers and Dolphin's system files are downloaded for you; shaders and upscaling are
+  included. Wii U games as `.wua` (or `.wud` / `.wux` with your console's keys in
+  `bios/Cemu/keys.txt`) - they can't be saved as states.
 - 💾 **Save states**: nine slots per game in a 3 by 3 grid, each with a picture of the moment,
   the date and time it was saved and how long you had played up to it. States are only saved and
   loaded when you pick a slot - RetroArch never saves, loads or deletes one by itself.

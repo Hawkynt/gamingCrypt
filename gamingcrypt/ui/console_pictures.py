@@ -104,6 +104,25 @@ PICTURES: dict[str, Picture] = {
                       colors={f"Button {i}": c for i, c in enumerate(
                           ("#c8323c", "#d6b52a", "#2e9b4f", "#3b5fd0", "#c86fae", "#e08a2e"), 1)}),
 }
+PICTURES["3ds"] = Picture("landscape", {**_face("X", "Y", "A", "B", 800, 270, 60), "L": (190, 95, "shoulder"),
+                                         "ZL": (310, 95, "small"), "R": (810, 95, "shoulder"),
+                                         "ZR": (690, 95, "small"), "Select": (760, 430, "small"),
+                                         "Start": (860, 430, "small")},
+                          dpad=(200, 340), sticks=((200, 210),), screen=(340, 140, 320, 250))
+# the Wii Remote, the Nunchuk's C and Z beside it
+PICTURES["wii"] = Picture("rect", {"A": (690, 300, "big"), "B": (800, 230, "face"), "1": (690, 410, "face"),
+                                   "2": (800, 410, "face"), "−": (430, 330, "small"), "Home": (500, 380, "small"),
+                                   "+": (570, 330, "small"), "C": (620, 160, "small"), "Z": (730, 160, "small"),
+                                   "Shake Wii Remote": (840, 130, "small"), "Shake Nunchuk": (160, 130, "small")},
+                          dpad=(230, 300), sticks=((230, 450),),
+                          colors={"A": "#8a93a8", "B": "#8a93a8"})
+# the Wii U GamePad: a screen between the sticks
+PICTURES["wiiu"] = Picture("landscape", {**_face("X", "Y", "A", "B", 820, 300, 55), "L": (190, 95, "shoulder"),
+                                         "ZL": (310, 95, "small"), "R": (810, 95, "shoulder"),
+                                         "ZR": (690, 95, "small"), "−": (700, 450, "small"),
+                                         "+": (790, 450, "small"), "L3": (120, 450, "small"),
+                                         "R3": (880, 450, "small")},
+                           dpad=(180, 330), sticks=((180, 200), (820, 170)), screen=(330, 130, 340, 260))
 PICTURES["gbc"] = PICTURES["gb"]
 PICTURES["ps2"] = PICTURES["psx"]
 PICTURES["segacd"] = PICTURES["megadrive"]
@@ -111,7 +130,7 @@ GENERIC = Picture("pad", {**_face("X", "Y", "A", "B"), "L": (250, 115, "shoulder
                           "L2": (250, 55, "shoulder"), "R2": (750, 55, "shoulder"), "L3": (390, 440, "face"),
                           "R3": (610, 440, "face"), **SELECT_START})
 SHORT_TEXT = {"C-Left": "C◀", "C-Down": "C▼", "Up": "▲", "Down": "▼", "Left": "◀", "Right": "▶", "Triangle": "△", "Circle": "○", "Square": "□", "Cross": "✕", "C-buttons (stick)": "C-stick",
-              "Touch / Mic": "Touch", "L trigger": "L", "R trigger": "R", "Turbo B": "Turbo B",
+              "Touch / Mic": "Touch", "Shake Wii Remote": "Shake", "Shake Nunchuk": "Shake N", "L trigger": "L", "R trigger": "R", "Turbo B": "Turbo B",
               **{f"Button {i}": str(i) for i in range(1, 7)}}
 
 

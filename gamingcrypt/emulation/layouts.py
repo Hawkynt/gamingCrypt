@@ -29,6 +29,13 @@ CONSOLES: dict[str, dict[str, str]] = {
     "nds": {"B": "b", "A": "a", "Y": "y", "X": "x", "L": "l", "R": "r", "Select": "select", "Start": "start",
             "Touch / Mic": "r3"},
     "gc": {"A": "b", "B": "y", "X": "a", "Y": "x", "Z": "r", "L": "l2", "R": "r2", "Start": "start"},
+    "3ds": {"B": "b", "A": "a", "Y": "y", "X": "x", "L": "l", "R": "r", "ZL": "l2", "ZR": "r2",
+            "Select": "select", "Start": "start"},
+    # Dolphin's Wii Remote + Nunchuk
+    "wii": {"A": "a", "B": "b", "C": "x", "Z": "y", "−": "l", "+": "r", "1": "start", "2": "select",
+            "Home": "r3", "Shake Wii Remote": "r2", "Shake Nunchuk": "l2"},
+    "wiiu": {"B": "b", "A": "a", "Y": "y", "X": "x", "L": "l", "R": "r", "ZL": "l2", "ZR": "r2",
+             "−": "select", "+": "start", "L3": "l3", "R3": "r3"},
     "mastersystem": {"1": "b", "2": "a", "Pause": "start"},
     "megadrive": {"A": "y", "B": "b", "C": "a", "X": "l", "Y": "x", "Z": "r", "Mode": "select", "Start": "start"},
     "gamegear": {"1": "b", "2": "a", "Start": "start"},
@@ -61,7 +68,8 @@ CORE_NAMES = {"snes9x": "Snes9x", "bsnes": "bsnes", "mupen64plus_next": "Mupen64
               "yabasanshiro": "YabaSanshiro", "flycast": "Flycast", "swanstation": "SwanStation",
               "mednafen_psx_hw": "Beetle PSX HW", "pcsx_rearmed": "PCSX-ReARMed", "ppsspp": "PPSSPP", "pcsx2": "LRPS2",
               "mednafen_pce_fast": "Beetle PCE Fast", "stella": "Stella", "fbneo": "FinalBurn Neo",
-              "mame2003_plus": "MAME 2003-Plus", "mesen": "Mesen", "nestopia": "Nestopia", "fceumm": "FCEUmm"}
+              "mame2003_plus": "MAME 2003-Plus", "mesen": "Mesen", "nestopia": "Nestopia", "fceumm": "FCEUmm",
+              "azahar": "Azahar", "citra": "Citra", "cemu": "Cemu"}
 INFO_DIR = Path("/usr/share/libretro/info")
 
 

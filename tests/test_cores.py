@@ -175,3 +175,21 @@ def test_failed_core_download_says_so(qtbot, window, paths):
     qtbot.waitUntil(lambda: bool(notices), timeout=5000)
     assert "Couldn't download a RetroArch core for SNES" in notices[0]
     assert not window.launch_overlay.isVisible() and window._started == []
+
+
+def test_playing_a_gamecube_game_gets_dolphins_system_files_first(qtbot, window, paths, monkeypatch):
+    from tests.test_new_systems import Response, dolphin_zip
+
+    asked = []
+    monkeypatch.setattr(cores.requests, "get", lambda url, timeout=None: asked.append(url) or Response(200, dolphin_zip()))
+    window._games.core_fetcher = lambda p, s, wanted: None  # (the core is there)
+    (paths.cores / "dolphin_libretro.so").write_text("x")
+    (paths.roms_for(BY_ID["gc"]) / "Zelda.iso").write_text("x")
+    zelda = scan(paths, BY_ID["gc"])[0]
+    ok, message = window.launch_rom(zelda)
+    assert ok and message == "Downloading the system files for GameCube…"
+    qtbot.waitUntil(lambda: window._started == ["Zelda"], timeout=5000)
+    dolphin = lambda: [u for u in asked if u.endswith("Dolphin.zip")]  # noqa: E731 - (covers are asked too)
+    assert (paths.bios / "dolphin-emu" / "Sys").is_dir() and len(dolphin()) == 1
+    window.launch_rom(zelda)  # there now
+    assert len(dolphin()) == 1 and window._started == ["Zelda", "Zelda"]

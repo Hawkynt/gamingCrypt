@@ -327,9 +327,10 @@ class QuickMenu(QWidget):
         self.screenshot_button.setVisible(in_game)
         self.tools_row.setVisible(overlay is not None or in_game)
 
-    def set_emulated(self, emulated: bool, speed: float | None = None) -> None:
-        """RetroArch game: states, controls and how fast it runs right now (1 = as the console)."""
-        self.state_row.setVisible(emulated)
+    def set_emulated(self, emulated: bool, speed: float | None = None, states: bool = True) -> None:
+        """RetroArch game: states (where its core can save them), controls and how fast it runs
+        right now (1 = as the console)."""
+        self.state_row.setVisible(emulated and states)
         self.controls_row.setVisible(emulated)
         self.speed_row.setVisible(emulated and speed is not None)
         if speed is not None:

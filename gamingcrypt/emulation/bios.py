@@ -40,6 +40,8 @@ REQUIREMENTS: dict[str, Requirement] = {
     "pce": Requirement({"syscard3.pce": "38179df8f4ac870017db21ebcbf53114"}, required=False,
                        note="only for CD games"),
     "ps2": Requirement({}, any_in="pcsx2/bios", note="a PS2 BIOS dump, e.g. SCPH-70004.bin"),
+    "wiiu": Requirement({"Cemu/keys.txt": ""}, required=False,
+                        note="only for .wud / .wux disc images: your console's keys"),
     "switch": Requirement({"switch/prod.keys": ""},
                           note="your console's keys; the firmware files go into bios/switch/firmware"),
 }
