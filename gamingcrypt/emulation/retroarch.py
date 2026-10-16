@@ -337,7 +337,7 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
            widescreen: str | None = None, input_lag: str | None = None,
            renderer: str | None = None, resolution: str | None = None,
            shaders: list[str] | None = None, shader_dirs=None, scaler: str | None = None,
-           in_step: bool = False) -> tuple[bool, str]:
+           in_step: bool = False, language: str | None = None) -> tuple[bool, str]:
     if not available(which):
         return False, "RetroArch isn't installed - run ./install.sh"
     core = find_core(paths, game.system, core_name)
@@ -370,6 +370,9 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
             options.update(table[short].get(choice, table[short][None]))
         options.update(scalers.texture_options(short, scaler if textures else None, resolution))
     options.update(FIXED_OPTIONS.get(short, {}))
+    from gamingcrypt.emulation import languages
+
+    options.update(languages.core_options(short, language))  # the console's language (Wii, Wii U …)
     if options:  # the game's own core options file
         extra["global_core_options"] = "true"
         extra["core_options_path"] = write_core_options(core_options_file(paths, game), options)

@@ -1080,7 +1080,7 @@ class MainWindow(QMainWindow):
 
     def start_retroarch(self, game, paths) -> tuple[bool, str]:
         """RetroArch with the game and everything chosen for it (also again, for another speed)."""
-        from gamingcrypt.emulation import layouts, retroarch, upscaling
+        from gamingcrypt.emulation import languages, layouts, retroarch, upscaling
         from gamingcrypt.emulation import shaders as shader_choice
         from gamingcrypt.ui.tour import data_dir
 
@@ -1096,7 +1096,8 @@ class MainWindow(QMainWindow):
                                        input_lag=profile.get("input_lag"), renderer=profile.get("renderer"),
                                        resolution=resolution,
                                        shaders=shader_choice.for_game(self.config, profile, game.system.id),
-                                       scaler=scaler, in_step=bool(profile.get("in_step")))
+                                       scaler=scaler, in_step=bool(profile.get("in_step")),
+                                       language=languages.for_system(self.config, game.system))
         if ok:
             self.follow_game_refresh(config_mod.cache_dir() / "logs" / retroarch.LOG_NAME)
             self.speed_mode, self.speed = "normal", 1.0  # RetroArch starts at normal speed

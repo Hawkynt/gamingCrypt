@@ -79,6 +79,52 @@ class RomCard(QFrame):
         return True
 
 
+class SystemLanguagePage(QWidget):
+    """The console's language for every game of a system (Wii, Wii U, GameCube): the games show
+    their text in it - those that have it."""
+
+    def __init__(self, tab, system, config: dict, save, parent: QWidget | None = None, environ=None):
+        super().__init__(parent)
+        from PySide6.QtWidgets import QComboBox
+
+        from gamingcrypt.emulation import languages
+
+        self.tab, self.system, self.config, self.save = tab, system, config, save
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(30, 16, 30, 16)
+        top = QHBoxLayout()
+        top.addWidget(tab.back_button())
+        title = QLabel(f"{system.name} · Language")
+        title.setObjectName("title")
+        title.setWordWrap(True)
+        top.addWidget(title, 1)
+        layout.addLayout(top)
+        hint = QLabel("The console's language - its games show their text in it, if they have it. "
+                      "From the next start of a game.")
+        hint.setObjectName("cardMeta")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+        line = QHBoxLayout()
+        caption = QLabel("Language")
+        caption.setMinimumWidth(160)
+        line.addWidget(caption)
+        self.combo = QComboBox()
+        self.combo.addItem(f"Like the device ({languages.device_language(system, environ)})", None)
+        for name in languages.languages(system):
+            self.combo.addItem(name, name)
+        self.combo.setCurrentIndex(max(0, self.combo.findData(languages.chosen(config, system.id))))
+        self.combo.currentIndexChanged.connect(self._chosen)
+        line.addWidget(self.combo, 1)
+        layout.addLayout(line)
+        layout.addStretch()
+
+    def _chosen(self, _index: int) -> None:
+        from gamingcrypt.emulation import languages
+
+        languages.set_chosen(self.config, self.system.id, self.combo.currentData())
+        self.save(self.config)
+
+
 class SystemUpscalingPage(QWidget):
     """The upscaling algorithm and resolution every game of a system gets - those without a
     choice of their own (a game's ⚙ Options)."""
@@ -196,6 +242,12 @@ class SystemPage(QWidget):
         self.upscaling_button.clicked.connect(lambda: tab.open_upscaling(system.id))
         self.upscaling_button.setVisible(system.emulator == "retroarch" and hasattr(tab, "open_upscaling"))
         top.addWidget(self.upscaling_button)
+        from gamingcrypt.emulation import languages
+
+        self.language_button = big_button("🌐  Language")  # the console's: the games' text in it
+        self.language_button.clicked.connect(lambda: tab.open_language(system.id))
+        self.language_button.setVisible(languages.has_language(system) and hasattr(tab, "open_language"))
+        top.addWidget(self.language_button)
         self.add_button = big_button("⬆  Add ROMs")
         self.add_button.clicked.connect(tab.open_upload)
         top.addWidget(self.add_button)
