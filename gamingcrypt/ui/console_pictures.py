@@ -31,6 +31,7 @@ class Picture:
     # ("dot", x, y, r, color[, text]) - e.g. the C buttons that aren't their own; ("led", x, y, r, color)
     decor: tuple[tuple, ...] = ()
     split_dpad: bool = False  # PlayStation: four separate arrows, not one cross
+    small_dpad: bool = False  # GameCube: a small one
 
 
 def _face(top: str, left: str, right: str, bottom: str, x: int = 750, y: int = 300, d: int = 72) -> dict:
@@ -69,11 +70,14 @@ PICTURES: dict[str, Picture] = {
                                  "R": (810, 95, "shoulder"), "Select": (760, 430, "small"),
                                  "Start": (860, 430, "small"), "Touch / Mic": (500, 450, "small")},
                    dpad=(200, 270), screen=(340, 140, 320, 250)),
-    "gc": Picture("pad", {"A": (750, 300, "big"), "B": (665, 360, "face"), "X": (835, 255, "face"),
-                          "Y": (730, 215, "face"), "Z": (780, 155, "small"), "L": (230, 100, "shoulder"),
-                          "R": (770, 100, "shoulder"), "Start": (500, 290, "face")},
-                  dpad=(360, 420), sticks=((250, 280), (640, 420)),
-                  colors={"A": "#2fae8a", "B": "#c8323c", "Z": "#6a4fc8", "Start": "#555b6e"}),
+    # the stick up left, the small D-pad below it, the yellow C-stick down right; the big green A
+    # with B below left, X right and Y above it; Z on top next to R
+    "gc": Picture("gc", {"A": (735, 285, "big"), "B": (662, 340, "c"), "X": (818, 248, "face"),
+                         "Y": (722, 205, "c"), "Z": (785, 108, "small"), "L": (215, 50, "shoulder"),
+                         "R": (785, 50, "shoulder"), "Start": (500, 265, "face")},
+                  dpad=(370, 400), sticks=((250, 260), (610, 410)),
+                  colors={"A": "#2fae8a", "B": "#c8323c", "Z": "#6a4fc8", "Start": "#555b6e"},
+                  decor=(("dot", 610, 410, 30, "#d6b52a", "C"),), small_dpad=True),
     "mastersystem": Picture("rect", {"1": (700, 320, "face"), "2": (800, 320, "face"),
                                      "Pause": (500, 330, "small")}),
     "megadrive": Picture("pad", {"A": (650, 345, "face"), "B": (740, 315, "face"), "C": (830, 285, "face"),
@@ -155,8 +159,9 @@ SHORT_TEXT = {"C-Left": "C◀", "C-Down": "C▼", "Up": "▲", "Down": "▼", "L
 def dpad_buttons(pic: Picture) -> dict[str, tuple[int, int, str]]:
     """The four directions on the D-pad (or the stick, without one)."""
     x, y = pic.dpad or pic.sticks[0]
-    return {"Up": (x, y - 50, "dir"), "Down": (x, y + 50, "dir"), "Left": (x - 50, y, "dir"),
-            "Right": (x + 50, y, "dir")}
+    d = 40 if pic.small_dpad else 50
+    return {"Up": (x, y - d, "dir"), "Down": (x, y + d, "dir"), "Left": (x - d, y, "dir"),
+            "Right": (x + d, y, "dir")}
 
 
 def picture(system_id: str) -> Picture:
@@ -204,6 +209,11 @@ def _body(shape: str) -> QPainterPath:
         rotated(205, 400, 175, 300, 85, 10)
         rotated(795, 400, 175, 300, 85, -10)
         rounded(410, 300, 180, 250, 90)
+    elif shape == "gc":  # a wide front, two grips bending down (the D-pad and C-stick between them)
+        rounded(140, 150, 720, 220, 110)
+        rounded(290, 290, 420, 190, 90)
+        rotated(225, 370, 215, 300, 105, 22)
+        rotated(775, 370, 215, 300, 105, -22)
     elif shape in ("dualshock", "psx"):  # the front with the two long grips (DualShock: the sticks between)
         rounded(125, 140, 750, 240, 110)
         if shape == "dualshock":
@@ -255,8 +265,9 @@ def paint(painter: QPainter, pic: Picture, body: str = theme.SURFACE_HI, outline
             painter.drawRoundedRect(QRectF(cx - w / 2, cy - h / 2, w, h), 10, 10)
     elif pic.dpad:
         x, y = pic.dpad
-        painter.drawRoundedRect(QRectF(x - 75, y - 25, 150, 50), 8, 8)
-        painter.drawRoundedRect(QRectF(x - 25, y - 75, 50, 150), 8, 8)
+        arm, half = (58, 21) if pic.small_dpad else (75, 25)
+        painter.drawRoundedRect(QRectF(x - arm, y - half, 2 * arm, 2 * half), 8, 8)
+        painter.drawRoundedRect(QRectF(x - half, y - arm, 2 * half, 2 * arm), 8, 8)
     for x, y in pic.sticks:
         painter.setBrush(QColor("#11141b"))
         painter.drawEllipse(QPointF(x, y), 58, 58)

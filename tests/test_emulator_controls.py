@@ -241,3 +241,14 @@ def test_playstation_pads_as_they_were():
     assert ps1.split_dpad and ps2.split_dpad and any(d[0] == "led" for d in ps2.decor)
     n64 = console_pictures.picture("n64")
     assert n64.body == "n64" and {d[-1] for d in n64.decor if d[0] == "dot"} == {"C▲", "C▶"}
+
+
+def test_gamecube_pad_as_it_was():
+    """Its own body, a small D-pad and the yellow C-stick - every button on the drawing."""
+    from gamingcrypt.emulation import layouts
+    from gamingcrypt.ui import console_pictures
+
+    gc = console_pictures.picture("gc")
+    assert gc.body == "gc" and gc.small_dpad and len(gc.sticks) == 2
+    assert any(d[0] == "dot" and d[-1] == "C" for d in gc.decor)
+    assert set(layouts.console("gc")) <= set(gc.buttons)
