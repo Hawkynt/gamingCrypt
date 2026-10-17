@@ -1529,7 +1529,10 @@ class MainWindow(QMainWindow):
                 game, installer, "the Switch emulator (Eden)",
                 "Couldn't download the Switch emulator (Eden) - no network?")
             return None, message
-        return eden.launch(game, paths, data_dir(), config_mod.cache_dir() / "logs")
+        from gamingcrypt.emulation import languages
+
+        return eden.launch(game, paths, data_dir(), config_mod.cache_dir() / "logs",
+                           language=languages.for_system(self.config, game.system))
 
     def _rom_started(self, game, games, ok: bool, message: str, emulator: str) -> tuple[bool, str]:
         if ok:

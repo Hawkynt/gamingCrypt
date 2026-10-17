@@ -80,7 +80,7 @@ class RomCard(QFrame):
 
 
 class SystemLanguagePage(QWidget):
-    """The console's language for every game of a system (Wii, Wii U, GameCube): the games show
+    """The console's language for every game of a system (Wii, 3DS, PS2 …): the games show
     their text in it - those that have it."""
 
     def __init__(self, tab, system, config: dict, save, parent: QWidget | None = None, environ=None):
