@@ -965,7 +965,7 @@ class MainWindow(QMainWindow):
             self.game_watcher.watch(appid, QUICK)
             return
         if appid >= EMU_APPID_BASE:  # an emulated game (RetroArch)
-            self.game_watcher.describe = lambda a: "Starting RetroArch…"
+            self.game_watcher.describe = self._retroarch_starting
             self.launch_overlay.show_for(self.game_name(appid), appid, None, self.cover_loader(appid))
             self.launch_overlay.set_phase("Starting RetroArch…")
             self.game_watcher.watch(appid)
@@ -978,6 +978,35 @@ class MainWindow(QMainWindow):
             self.game_watcher.describe = lambda a: launch_phase(a, None, name, progress=service.install_progress)
         self.launch_overlay.show_for(self.game_name(appid), appid, getattr(games, "service", None))
         self.game_watcher.watch(appid)
+
+    def _retroarch_starting(self, appid: int) -> str:
+        """While RetroArch starts: did it fail to load the game? It stays open, empty, then - the
+        loading screen never ended (Final Fantasy VIII without its LibCrypt .sbi files)."""
+        from gamingcrypt.emulation import retroarch
+
+        problem = retroarch.start_problem(config_mod.cache_dir() / "logs" / retroarch.LOG_NAME)
+        if problem is None:
+            return "Starting RetroArch…"
+        QTimer.singleShot(0, lambda: self._retroarch_failed(appid, problem))
+        return "The game didn't load"
+
+    def _retroarch_failed(self, appid: int, problem: str) -> None:
+        """RetroArch ended (nothing to wait for), the reason said - on the game's page and as a notice."""
+        watcher = self.game_watcher
+        if watcher.appid != appid:
+            return  # handled already
+        log.warning("app %s didn't load: %s", appid, problem)
+        from gamingcrypt.steam.running import force_quit
+
+        watcher._stop()
+        run_async(lambda: force_quit(appid), lambda _n: None, lambda _e: None, owner=self)
+        if self.shell is not None:
+            for page in self.shell.findChildren(QWidget):
+                hook = getattr(page, "start_failed", None)
+                if callable(hook):
+                    hook(appid, problem)
+        self.notify(problem, "⚠")
+        self.game_over(appid, failed=True)
 
     def adopt_running_game(self) -> None:
         watcher = self.game_watcher

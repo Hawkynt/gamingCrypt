@@ -767,4 +767,13 @@ class RomGamePage(QWidget):
 
     def game_session_ended(self, appid: int, failed: bool) -> None:
         if appid == self.game.appid:
-            set_status(self.status, "It didn't start - see the message above" if failed else "", error=failed)
+            if failed and getattr(self, "_failure", ""):
+                self._failure = ""
+                return  # (start_failed said why)
+            set_status(self.status, "It didn't start" if failed else "", error=failed)
+
+    def start_failed(self, appid: int, problem: str) -> None:
+        """RetroArch couldn't load it: why, here on its page."""
+        if appid == self.game.appid:
+            self._failure = problem
+            set_status(self.status, problem, error=True)

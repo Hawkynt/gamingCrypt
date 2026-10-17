@@ -404,6 +404,30 @@ LOG_NAME = "retroarch.log"
 _FPS = re.compile(r"(?:SET_SYSTEM_AV_INFO|\[Core\] Geometry):.*?FPS: ([0-9.]+)")
 
 
+_REPORTED = re.compile(r"^\[libretro ERROR\] \[ReportError\] (.*?)(?=^\[|\Z)", re.MULTILINE | re.DOTALL)
+_LIBCRYPT = re.compile(r"libcrypt protected game without an SBI file:\s*\n\s*(\S+): (.+)")
+
+
+def start_problem(log: Path) -> str | None:
+    """RetroArch couldn't load the game - it stays open then, empty, and the loading screen never
+    ends: why, in the core's words (or plain ones where they're known). None: no such failure."""
+    try:
+        text = Path(log).read_text(errors="replace")
+    except OSError:
+        return None
+    if "[Content] Failed to load content" not in text:
+        return None
+    reasons = [r.strip() for r in _REPORTED.findall(text)]
+    reasons = [r for r in reasons if r and not r.startswith("System failed to boot")] or reasons
+    if (crypt := _LIBCRYPT.search(text)) is not None:
+        title = crypt.group(2).strip()
+        return (f"{title} is copy protected (LibCrypt): it needs its .sbi file next to each disc image, "
+                "named like the disc (e.g. \"… (Disc 1).cue\" -> \"… (Disc 1).sbi\") - add them, then start it again")
+    if reasons:
+        return "The game didn't load: " + " ".join(reasons[0].split())
+    return "The game didn't load - the emulator couldn't open it"
+
+
 def content_fps(log: Path) -> float | None:
     """The frame rate the running game asked for last (from RetroArch's log), e.g. 50 for PAL."""
     try:
