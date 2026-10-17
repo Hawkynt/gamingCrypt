@@ -2011,8 +2011,10 @@ class MainWindow(QMainWindow):
         from gamingcrypt.system.updater import Updater
 
         def done(info) -> None:
-            if info.available:
+            if info.available and info.behind:
                 self.notify(f"Update available ({info.behind} changes) - Settings → System", "⬇")
+            elif info.available:  # (pulled, but its install didn't get through)
+                self.notify(f"{info.message} - Settings → System", "⬇")
 
         run_async(Updater().check, done, lambda _e: None, owner=self)
 

@@ -40,16 +40,26 @@ class UpdateInfo:
     behind: int = 0
     changes: list[str] = field(default_factory=list)
     message: str = ""
+    unfinished: bool = False  # the last update was pulled, but install.sh didn't get through
 
     @property
     def available(self) -> bool:
-        return self.ok and self.behind > 0
+        return self.ok and (self.behind > 0 or self.unfinished)
+
+
+UNFINISHED = "The last update didn't finish installing - install it again"
 
 
 class Updater:
     def __init__(self, source: Path | None = None, runner: Runner = subprocess.run):
         self.source = source if source is not None else source_dir()
         self.runner = runner
+
+    @property
+    def unfinished_mark(self) -> Path | None:
+        """There while an update's install.sh hasn't got through: the code is pulled already, so
+        "is there anything new?" would say no - and the half installed update stayed so."""
+        return self.source / ".git" / "gamingcrypt-install-unfinished" if self.source is not None else None
 
     def _git(self, *args: str, timeout: int = 60) -> subprocess.CompletedProcess:
         return self.runner(["git", "-C", str(self.source), *args], capture_output=True, text=True, timeout=timeout)
@@ -69,6 +79,8 @@ class Updater:
         except (OSError, subprocess.SubprocessError, ValueError) as exc:
             return UpdateInfo(False, message=str(exc))
         changes = [line for line in log.stdout.splitlines() if line.strip()]
+        if self.unfinished_mark.exists():
+            return UpdateInfo(True, behind, changes, UNFINISHED, unfinished=True)
         return UpdateInfo(True, behind, changes, f"{behind} update(s) available" if behind else "Up to date")
 
     def needs_terminal(self, old: str, new: str) -> list[str]:
@@ -82,11 +94,15 @@ class Updater:
         if self.source is None:
             return False, "Not installed from a git folder", []
         try:
-            old = self._git("rev-parse", "HEAD").stdout.strip()
+            mark = self.unfinished_mark
+            unfinished = mark.read_text().split() if mark.exists() else []
+            # (again after one that didn't finish: what it changed counts too - from before it)
+            old = unfinished[0] if unfinished else self._git("rev-parse", "HEAD").stdout.strip()
             pulled = self._git("pull", "--ff-only", "--quiet", timeout=180)
             if pulled.returncode != 0:
                 return False, "git pull failed: " + (pulled.stderr.strip().splitlines() or ["?"])[-1], []
             new = self._git("rev-parse", "HEAD").stdout.strip()
+            mark.write_text(f"{old}\n")  # the commit from before - gone once install.sh got through
             installed = self.runner([str(self.source / "install.sh"), "--no-sudo"], capture_output=True, text=True,
                                     timeout=900, cwd=str(self.source), stdin=subprocess.DEVNULL)
         except (OSError, subprocess.SubprocessError) as exc:
@@ -94,6 +110,7 @@ class Updater:
         if installed.returncode != 0:
             last = (installed.stderr or installed.stdout or "").strip().splitlines()
             return False, "install.sh failed: " + (last[-1] if last else "?"), []
+        mark.unlink(missing_ok=True)
         return True, "Updated", self.needs_terminal(old, new) if old != new else []
 
 
