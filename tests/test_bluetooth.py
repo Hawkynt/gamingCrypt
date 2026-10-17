@@ -68,17 +68,49 @@ def test_pair_trusts_and_connects():
     b = bt()
     assert b.pair(BUDS.lower()) == (True, "Connected")
     args = [c[1:] for c in b.runner.calls]
-    assert args == [["--agent", "NoInputNoOutput", "pair", BUDS], ["trust", BUDS], ["connect", BUDS]]
+    assert args == [["info", BUDS], ["pairable", "on"],  # pairable: or BlueZ keeps no key (see below)
+                    ["--agent", "NoInputNoOutput", "pair", BUDS], ["trust", BUDS], ["connect", BUDS]]
 
 
 def test_failures_and_bad_addresses():
     failing = bt(fail=("pair",))
     ok, message = failing.pair(BUDS)
-    assert not ok and "pairing mode" in message and len(failing.runner.calls) == 1  # no trust/connect
+    assert not ok and "pairing mode" in message
+    assert not any(c[1] in ("trust", "connect") for c in failing.runner.calls)  # no trust/connect
     with pytest.raises(ValueError):
         bt().connect("AA:BB; rm -rf /")
     assert bt().disconnect(PAD) == (True, "Disconnected") and bt().remove(PAD) == (True, "Removed")
     assert bt().set_powered(False)[0]
+
+
+DUALSENSE = "58:10:31:C1:82:42"
+HALF_PAIRED = """Device 58:10:31:C1:82:42 (public)
+\tName: DualSense Wireless Controller
+\tAlias: DualSense Wireless Controller
+\tIcon: input-gaming
+\tPaired: yes
+\tBonded: no
+\tTrusted: yes
+\tConnected: yes
+"""
+
+
+def test_a_controller_paired_without_its_key_is_paired_anew():
+    """Seen on the handheld: paired while the adapter wasn't pairable - "Paired: yes, Bonded: no".
+    BlueZ refused its input ("Rejected connection from !bonded device"): connected, and neither
+    the UI nor games got a single button. It's removed and paired again, the adapter pairable."""
+    INFO[DUALSENSE] = HALF_PAIRED
+    try:
+        device = parse_info(DUALSENSE, HALF_PAIRED)
+        assert device.paired and device.connected and device.bonded is False and device.half_paired
+        assert not parse_info(PAD, INFO[PAD]).half_paired  # (no "Bonded" line: an older BlueZ - fine)
+        b = bt()
+        assert b.pair(DUALSENSE) == (True, "Connected")
+        args = [c[1:] for c in b.runner.calls]
+        assert args[:4] == [["info", DUALSENSE], ["remove", DUALSENSE], ["pairable", "on"],
+                            ["--agent", "NoInputNoOutput", "pair", DUALSENSE]]
+    finally:
+        INFO.pop(DUALSENSE)
 
 
 def test_search_scans_first():
@@ -184,3 +216,18 @@ def test_quick_menu_opens_bluetooth_while_the_game_runs(qtbot, monkeypatch):
     menu.close_menu()
     assert asides == ["game"]
     window.game_watcher._stop()
+
+
+def test_the_list_says_a_half_paired_controller_needs_pairing_again(qtbot, section, monkeypatch):
+    from gamingcrypt.system.bluetooth import Device
+
+    pairs = []
+    monkeypatch.setattr(section.bt, "pair", lambda mac: pairs.append(mac) or (True, "Connected"))
+    half = Device(DUALSENSE, "DualSense Wireless Controller", paired=True, connected=True, icon="input-gaming",
+                  bonded=False)
+    section.show_devices([half])
+    button = section.rows[DUALSENSE].findChildren(type(section.toggle))[0]
+    assert "Not paired properly · tap to pair again" in button.text() and "Connected" not in button.text()
+    button.click()  # not "disconnect": paired anew
+    assert "pairing mode" in section.status.text()
+    qtbot.waitUntil(lambda: pairs == [DUALSENSE])

@@ -273,7 +273,10 @@ class BluetoothSection(QFrame):
             row.setObjectName("menuRow")
             line = QHBoxLayout(row)
             line.setContentsMargins(0, 0, 0, 0)
-            state = "Connected" if device.connected else ("Paired" if device.paired else "Tap to pair")
+            if device.half_paired:  # (its buttons are refused: connected or not, it doesn't work)
+                state = "Not paired properly · tap to pair again"
+            else:
+                state = "Connected" if device.connected else ("Paired" if device.paired else "Tap to pair")
             battery = f"  ·  🔋 {device.battery}%" if device.battery is not None else ""
             button = big_button(f"{device.symbol}  {device.name}   ·  {state}{battery}",
                                 "primary" if device.connected else "")
@@ -287,7 +290,10 @@ class BluetoothSection(QFrame):
             self.rows[device.mac] = row
 
     def choose(self, device) -> None:
-        if device.connected:
+        if device.half_paired:
+            self._run(lambda: self.bt.pair(device.mac),
+                      f"Pairing {device.name} again - put it in pairing mode (a DualSense: hold PS + Create)…")
+        elif device.connected:
             self._run(lambda: self.bt.disconnect(device.mac), f"Disconnecting {device.name}…")
         elif device.paired:
             self._run(lambda: self.bt.connect(device.mac), f"Connecting {device.name}…")
