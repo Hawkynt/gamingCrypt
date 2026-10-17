@@ -177,6 +177,28 @@ def test_launch_writes_the_lag_settings(emu, tmp_path):
     assert 'preemptive_frames_enable = "false"' in (emu.config / "gamingcrypt.cfg").read_text()
 
 
+def test_a_wii_u_game_can_have_the_gamepad(qtbot, window, emu, tmp_path):
+    """Wii U games get a Pro Controller; one that needs the GamePad's screen or touch gets it in its
+    Options - kept for that game, given to RetroArch at its start. Other consoles: no such row."""
+    from gamingcrypt.ui.emulation_pages import RomGamePage
+
+    page = RomGamePage(window._games, window._ff7)
+    qtbot.addWidget(page)
+    assert not page.pad_combo.isVisibleTo(page.options_panel)  # PS1: nothing to choose
+    (emu.roms / "wiiu").mkdir(parents=True, exist_ok=True)
+    (emu.roms / "wiiu" / "Super Mario Maker.wua").write_text("x")
+    maker = scan(emu, BY_ID["wiiu"])[0]
+    page = RomGamePage(window._games, maker)
+    qtbot.addWidget(page)
+    assert page.pad_combo.isVisibleTo(page.options_panel) and page.pad_combo.currentText() == "Wii U Pro Controller"
+    page.pad_combo.setCurrentIndex(page.pad_combo.findData("gamepad"))
+    assert window._games.profiles.get(maker.appid)["pad"] == "gamepad"
+    assert "screen or touch" in page.pad_combo.currentText()
+    again = RomGamePage(window._games, maker)  # opened again: what was chosen
+    qtbot.addWidget(again)
+    assert again.pad_combo.currentData() == "gamepad"
+
+
 def test_input_lag_option_on_the_game_page(qtbot, window, emu):
     from gamingcrypt.ui.emulation_pages import RomGamePage
 

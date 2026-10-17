@@ -569,6 +569,20 @@ class RomGamePage(QWidget):
         self.renderer_combo.currentIndexChanged.connect(
             lambda _i: self.tab.profiles.set(appid, "renderer", self.renderer_combo.currentData()))
 
+        # the controller the game sees (Wii U: a Pro Controller - or the GamePad, for a game that
+        # needs its screen or touch); from the next start
+        pads = retroarch.GAME_PADS.get(self.game.system.id, {})
+        self.pad_combo = QComboBox()
+        self.pad_combo.addItem(retroarch.DEFAULT_PADS.get(self.game.system.id, ""), None)
+        for key, (_device, label) in pads.items():
+            self.pad_combo.addItem(label, key)
+        self.pad_combo.setCurrentIndex(max(self.pad_combo.findData(profile.get("pad")), 0))
+        self.pad_caption = row("Controller", self.pad_combo)
+        self.pad_combo.setVisible(bool(pads))
+        self.pad_caption.setVisible(bool(pads))
+        self.pad_combo.currentIndexChanged.connect(
+            lambda _i: self.tab.profiles.set(appid, "pad", self.pad_combo.currentData()))
+
         # Upscaling: a classic pixel-art algorithm - on the whole picture (2D consoles) or the textures
         # (3D consoles, when the core has it); Resolution: its factor (2D) or the internal one (3D)
         from gamingcrypt.emulation import scalers

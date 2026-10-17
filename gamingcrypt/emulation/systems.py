@@ -44,8 +44,12 @@ SYSTEMS: tuple[System, ...] = (
     System("wii", "Nintendo Wii", (".iso", ".wbfs", ".rvz", ".wia", ".gcz", ".ciso", ".wad"), ("dolphin",),
            extra=(("input_libretro_device_p1", "769"),)),
     # Cemu: draws with Vulkan (its OpenGL path is black under gamescope), can't save states;
-    # one-file games (.wua, or .wud / .wux disc images with the console's keys.txt)
-    System("wiiu", "Nintendo Wii U", (".wua", ".wud", ".wux"), ("cemu",), video="vulkan", save_states=False),
+    # one-file games (.wua, or .wud / .wux disc images with the console's keys.txt). Player 1 is a
+    # Wii U Pro Controller (RetroArch's device 513 - the core's RETRO_DEVICE_PRO), not the GamePad:
+    # some games want one; one that needs the GamePad's screen gets it back in its Options
+    # (retroarch.GAME_PADS). The core maps no Home button: Guide / Windows stay the quick menu.
+    System("wiiu", "Nintendo Wii U", (".wua", ".wud", ".wux"), ("cemu",), video="vulkan", save_states=False,
+           extra=(("input_libretro_device_p1", "513"),)),
     System("mastersystem", "Sega Master System", (".sms",) + ARCHIVES, ("genesis_plus_gx", "picodrive")),
     System("megadrive", "Sega Mega Drive / Genesis", (".md", ".gen", ".smd", ".bin") + ARCHIVES,
            ("genesis_plus_gx", "picodrive")),

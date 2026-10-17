@@ -144,13 +144,17 @@ PICTURES["wii"] = Picture("wii", {"A": (650, 245, "big"), "B": (790, 245, "face"
                           colors={"A": "#8a93a8", "B": "#8a93a8"},
                           decor=(("cable", 288, 470, 300, 552, 610, 560, 650, 540),  # Nunchuk -> Remote
                                  ("bar", 650, 33, 104, 16, "#11141b")))  # the remote's IR window
-# the Wii U GamePad: a screen between the sticks
-PICTURES["wiiu"] = Picture("landscape", {**_face("X", "Y", "A", "B", 820, 300, 55), "L": (190, 95, "shoulder"),
-                                         "ZL": (310, 95, "small"), "R": (810, 95, "shoulder"),
-                                         "ZR": (690, 95, "small"), "−": (700, 450, "small"),
-                                         "+": (790, 450, "small"), "L3": (120, 450, "small"),
-                                         "R3": (880, 450, "small")},
-                           dpad=(180, 330), sticks=((180, 200), (820, 170)), screen=(330, 130, 340, 260))
+# the Wii U Pro Controller - what Wii U games are played with (systems.py): both sticks on top, the
+# D-pad under the left one, A B X Y under the right one, − ⌂ + between them (⌂ is GamingCrypt's
+# quick menu button: drawn, not a button of the game's), the four player lights below
+PICTURES["wiiu"] = Picture("pad", {**_face("X", "Y", "A", "B", 750, 377, 58), "L": (250, 105, "shoulder"),
+                                   "R": (750, 105, "shoulder"), "ZL": (250, 48, "shoulder"),
+                                   "ZR": (750, 48, "shoulder"), "−": (440, 250, "c"), "+": (560, 250, "c"),
+                                   "L3": (250, 215, "face"), "R3": (750, 215, "face")},
+                           dpad=(250, 377), sticks=((250, 215), (750, 215)),
+                           decor=(("dot", 500, 250, 23, "#3a4152", "⌂"),
+                                  *(("led", 470 + 20 * i, 330, 5, "#4aa3ff" if i == 0 else "#3a4152")
+                                    for i in range(4))))
 PICTURES["gbc"] = PICTURES["gb"]
 PICTURES["segacd"] = PICTURES["megadrive"]
 PICTURES["sega32x"] = PICTURES["megadrive"]
