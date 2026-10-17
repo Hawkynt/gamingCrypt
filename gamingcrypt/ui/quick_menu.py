@@ -568,6 +568,14 @@ class QuickMenu(QWidget):
         name = combo.currentData()
         if name and self.system.audio and not self.system.audio.set_default(kind, name):
             set_status(self.status, f"Could not switch the {kind}", error=True)
+            return
+        if kind == "output" and name and self.system.audio:
+            # the slider is that output's: its own level (it showed the old one's, and the first
+            # touch set the new one to it)
+            level = next((d.volume for d in self.system.audio.devices("output") if d.name == name), None)
+            if level is not None:
+                self._set_quietly(self.volume, min(level, 100))
+                self.volume_value.setText(f"{min(level, 100)}%")
 
     def _volume(self, percent: int) -> None:
         name = self.output.currentData()

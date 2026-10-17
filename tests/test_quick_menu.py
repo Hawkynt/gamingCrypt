@@ -184,6 +184,17 @@ def test_menu_shows_current_values(menu):
     assert m.parentWidget().focusWidget() is m.back_button
 
 
+def test_the_volume_slider_follows_the_output(menu):
+    """Speakers at 40 %, HDMI at 80 %: switched to HDMI, the slider shows HDMI's 80 % - it kept
+    showing 40 %, and the first touch set HDMI to about that."""
+    m, audio, *_ = menu
+    m.open_menu(620, "Portal 2")
+    assert m.volume.value() == 40
+    m.output.setCurrentIndex(m.output.findData("hdmi"))
+    assert m.volume.value() == 80 and m.volume_value.text() == "80%"
+    assert not any(call[0] == "volume" for call in audio.calls)  # shown, nothing set
+
+
 def test_menu_without_game_has_no_force_quit(menu):
     m, *_ = menu
     m.open_menu(None)
