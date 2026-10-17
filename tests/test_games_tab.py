@@ -59,6 +59,58 @@ def test_cards_are_reused_while_typing(qtbot):
     assert tab.home.cards[620] is card
 
 
+@pytest.fixture
+def big_console(qtbot, tmp_path, monkeypatch):
+    """A console with 150 games, and how often the grids are laid out."""
+    from gamingcrypt.emulation.library import EmulationPaths
+    from gamingcrypt.ui import widgets
+
+    paths = EmulationPaths(tmp_path / "Emulation")
+    paths.ensure()
+    for i in range(150):
+        (paths.roms / "snes" / f"Game {i:03d}.sfc").write_text("x")
+    from gamingcrypt.emulation import covers
+
+    def offline(*_a, **_k):
+        raise covers.requests.RequestException("offline")  # (150 cover downloads would hold the workers)
+
+    monkeypatch.setattr(covers.requests, "get", offline)
+    passes = []
+    real = widgets.FlowLayout._do_layout
+    monkeypatch.setattr(widgets.FlowLayout, "_do_layout",
+                        lambda self, rect, apply: passes.append(self) or real(self, rect, apply))
+    import copy
+
+    from gamingcrypt.config import DEFAULTS
+
+    tab = GamesTab(FakeService(), library_settings=copy.deepcopy(DEFAULTS)["libraries"], emulation_root=str(paths.root))
+    qtbot.addWidget(tab)
+    tab.resize(1280, 800)
+    tab.show()
+    qtbot.waitUntil(lambda: len([a for a in tab.home.result_appids if a >= 0x70000000]) >= 150, timeout=10000)
+    return tab, passes
+
+
+def test_leaving_a_console_doesnt_lay_every_game_out_again(qtbot, big_console):
+    """Back from a console's page looks through the libraries again: the installed games stood the
+    UI still for a second - each card shown laid the whole grid out once more (Qt does that at once),
+    and every game came back as a new card loading its cover anew. Now: the same cards, laid out
+    once."""
+    tab, passes = big_console
+    cards = dict(tab.home.cards)
+    tab.open_system("snes")
+    loaded = []
+    real = tab._roms_loaded
+    tab._roms_loaded = lambda found: (real(found), loaded.append(1))
+    passes.clear()
+    tab.back()
+    qtbot.waitUntil(lambda: bool(loaded), timeout=5000)
+    qtbot.wait(50)
+    assert all(tab.home.cards[appid] is card for appid, card in cards.items())  # no cover loaded anew
+    assert sum(1 for layout in passes if layout is tab.home.grid) < 20  # (it was more than 150)
+    assert all(c.isVisible() for c in cards.values())
+
+
 def test_not_installed_never_listed(qtbot):
     from gamingcrypt.steam.models import SteamGame
 

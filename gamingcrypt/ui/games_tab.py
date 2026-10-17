@@ -543,18 +543,28 @@ class GamesHome(QWidget):
         if isinstance(focused, (GameCard, RomCard, WindowsCard)):
             self.selected_appid = focused.game.appid
         # cards are made once and only re-ordered: typing must stay fast
-        for card in self.grid.take_all():
-            card.hide()
+        ordered = []
         for game in matches:
             card = self.cards.get(game.appid)
-            if card is None or card.game is not game:
+            # a library looked through again (every Back) has new, equal games: their cards
+            # stay - each new one loads its cover, hundreds of them stood the UI still
+            if card is not None and card.game == game:
+                card.game = game
+            else:
                 if card is not None:
                     card.deleteLater()
                 card = self._card(game)
                 self.cards[game.appid] = card
-            self.grid.addWidget(card)
-            card.show()
-        self.grid.invalidate()
+            ordered.append(card)
+        if ordered != self.grid.widgets() or not all(card.isVisibleTo(self.grid_widget) for card in ordered):
+            with self.grid.batch():  # laid out once, not once per card shown
+                shown = set(ordered)
+                for card in self.grid.take_all():
+                    if card not in shown:
+                        card.hide()
+                for card in ordered:
+                    self.grid.put(card)
+                    card.show()
         self.result_appids = [g.appid for g in matches]
         card = self.cards.get(self.selected_appid) if self.selected_appid is not None else None
         if card is not None and card.isVisible() and isinstance(focused, (GameCard, RomCard, WindowsCard)):
