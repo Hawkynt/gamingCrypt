@@ -95,4 +95,14 @@ def reboot_into(entry: BootEntry, runner: Runner = subprocess.run, helper: str =
     from gamingcrypt.system.session import power_action
 
     ok, message = power_action("restart", runner)
-    return ok, f"Restarting into {entry.name}…" if ok else message
+    if ok:
+        return True, f"Restarting into {entry.name}…"
+    # no restart: BootNext would still send the next start (whenever that is) into it
+    try:
+        cleared = runner(["sudo", "-n", helper, "boot-next-clear"], capture_output=True, text=True,
+                         timeout=20).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        cleared = False
+    if not cleared:
+        message += f" - and the next start still goes into {entry.name} (couldn't take that back)"
+    return False, message
