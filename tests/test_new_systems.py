@@ -82,6 +82,38 @@ def test_wii_u_is_played_with_a_pro_controller(paths, tmp_path):
     assert "Home" not in layouts.console("wiiu")  # not the game's: Guide / Windows stay the quick menu
 
 
+def test_the_controller_reaches_the_core_on_the_command_line(paths, tmp_path):
+    """RetroArch takes no input_libretro_device_pN from a config file (every port starts as a
+    plain joypad - Cemu then finds "no Wii Remote or Pro/Classic Controller on any port"): the
+    device goes on the command line, as --device=PORT:ID."""
+    (paths.cores / "cemu_libretro.so").write_text("x")
+    (paths.cores / "dolphin_libretro.so").write_text("x")
+    (paths.roms_for(BY_ID["wiiu"]) / "Mario Kart 8.wua").write_text("x")
+    (paths.roms_for(BY_ID["wii"]) / "Wii Sports.wbfs").write_text("x")
+    (paths.roms_for(BY_ID["gc"]) / "Zelda.iso").write_text("x")
+
+    def started(system, **kwargs):
+        commands = []
+        game = scan(paths, BY_ID[system])[0]
+        retroarch.launch(game, paths, tmp_path / "d", tmp_path / "l", popen=lambda cmd, **k: commands.append(cmd),
+                         which=lambda n: "/usr/bin/retroarch", **kwargs)
+        cmd = commands[0]
+        assert cmd.index("retroarch") < cmd.index("-L")
+        return [arg for arg in cmd if arg.startswith("--device")]
+
+    assert started("wiiu") == ["--device=1:513"]  # the Pro Controller
+    assert started("wiiu", pad="gamepad") == ["--device=1:1"]  # the GamePad
+    assert started("wii") == ["--device=1:769"]  # the Wii Remote with Nunchuk
+    assert started("gc") == []
+    assert retroarch.devices({"input_libretro_device_p2": "5", "video_driver": "vulkan"}) == ["--device=2:5"]
+
+
+def test_the_wii_u_controllers_to_choose_from():
+    assert retroarch.pad_choices("wiiu") == [(None, "Wii U Pro Controller"), (
+        "gamepad", "Wii U GamePad - for games that need its screen or touch")]
+    assert retroarch.pad_choices("snes") == []
+
+
 def test_3ds_on_glcore(paths, tmp_path):
     (paths.cores / "azahar_libretro.so").write_text("x")
     _game, config = launch(paths, tmp_path, "3ds", "Mario Kart 7.3ds")

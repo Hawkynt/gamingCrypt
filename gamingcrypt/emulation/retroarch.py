@@ -214,7 +214,7 @@ RENDERER_VIDEO = {"accurate": "vulkan"}
 # always: Cemu draws with Vulkan (RetroArch's Vulkan driver, see systems) - its OpenGL path is
 # black under gamescope
 FIXED_OPTIONS = {"cemu": {"cemu_gpu_api": "Vulkan"}}
-# a game's own controller (its Options) instead of its system's - RetroArch's device for player 1:
+# a game's own controller (its Options, the quick menu) instead of its system's - RetroArch's device for player 1:
 # Wii U games are played with a Pro Controller (systems.py); the GamePad (RETRO_DEVICE_JOYPAD) for
 # one that needs its screen or touch
 GAME_PADS = {"wiiu": {"gamepad": ("1", "Wii U GamePad - for games that need its screen or touch")}}
@@ -311,10 +311,26 @@ def current_disc(paths: EmulationPaths, game: RomGame, core: Path | None) -> int
     return 0
 
 
-def command(game: RomGame, core: Path, config: Path, reaper_path: Path, shader: Path | None = None) -> list[str]:
+def devices(extra: dict[str, str]) -> list[str]:
+    """The controllers the core gets (input_libretro_device_pN) as ``--device`` arguments: RetroArch
+    reads them from no config file - every port is a plain joypad unless the command line says so."""
+    found = (re.fullmatch(r"input_libretro_device_p(\d+)", key) for key in extra)
+    return [f"--device={m[1]}:{extra[m[0]]}" for m in found if m]
+
+
+def command(game: RomGame, core: Path, config: Path, reaper_path: Path, shader: Path | None = None,
+            pads: list[str] | None = None) -> list[str]:
     return [str(reaper_path), "SteamLaunch", f"AppId={game.appid}", "--",
-            "retroarch", "--verbose", "--appendconfig", str(config),
+            "retroarch", "--verbose", "--appendconfig", str(config), *(pads or []),
             *([f"--set-shader={shader}"] if shader else []), "-L", str(core), str(game.path)]
+
+
+def pad_choices(system_id: str) -> list[tuple[str | None, str]]:
+    """(key, name) of the controllers a system's games can be played with - [] when there's one."""
+    pads = GAME_PADS.get(system_id, {})
+    if not pads:
+        return []
+    return [(None, DEFAULT_PADS[system_id])] + [(key, label) for key, (_device, label) in pads.items()]
 
 
 SHADER_PRESET = "gamingcrypt.slangp"  # in config/shaders: the ticked shaders of the game being started
@@ -393,7 +409,7 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
     log_dir.mkdir(parents=True, exist_ok=True)
     try:
         with open(log_dir / LOG_NAME, "wb") as log:  # this game's log (its frame rate is read from it)
-            popen(command(game, core, config, reaper(data_dir), shader), stdin=subprocess.DEVNULL, stdout=log,
+            popen(command(game, core, config, reaper(data_dir), shader, devices(extra)), stdin=subprocess.DEVNULL, stdout=log,
                   stderr=subprocess.STDOUT, start_new_session=True, env=dict(os.environ))
     except OSError as exc:
         return False, f"RetroArch didn't start: {exc}"
@@ -402,6 +418,30 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
 
 LOG_NAME = "retroarch.log"
 _FPS = re.compile(r"(?:SET_SYSTEM_AV_INFO|\[Core\] Geometry):.*?FPS: ([0-9.]+)")
+
+
+_REPORTED = re.compile(r"^\[libretro ERROR\] \[ReportError\] (.*?)(?=^\[|\Z)", re.MULTILINE | re.DOTALL)
+_LIBCRYPT = re.compile(r"libcrypt protected game without an SBI file:\s*\n\s*(\S+): (.+)")
+
+
+def start_problem(log: Path) -> str | None:
+    """RetroArch couldn't load the game - it stays open then, empty, and the loading screen never
+    ends: why, in the core's words (or plain ones where they're known). None: no such failure."""
+    try:
+        text = Path(log).read_text(errors="replace")
+    except OSError:
+        return None
+    if "[Content] Failed to load content" not in text:
+        return None
+    reasons = [r.strip() for r in _REPORTED.findall(text)]
+    reasons = [r for r in reasons if r and not r.startswith("System failed to boot")] or reasons
+    if (crypt := _LIBCRYPT.search(text)) is not None:
+        title = crypt.group(2).strip()
+        return (f"{title} is copy protected (LibCrypt): it needs its .sbi file next to each disc image, "
+                "named like the disc (e.g. \"… (Disc 1).cue\" -> \"… (Disc 1).sbi\") - add them, then start it again")
+    if reasons:
+        return "The game didn't load: " + " ".join(reasons[0].split())
+    return "The game didn't load - the emulator couldn't open it"
 
 
 def content_fps(log: Path) -> float | None:

@@ -12,19 +12,26 @@ from gamingcrypt.input.remapper import Remapper
 class InputService:
     def __init__(self, config: dict, save: Callable[[dict], None],
                  finder: Callable[[], list[e.DeviceInfo]] | None = None,
-                 remapper_factory: Callable[[e.DeviceInfo, Profile], Remapper] = Remapper):
+                 remapper_factory: Callable[[e.DeviceInfo, Profile], Remapper] | None = None):
         self.config = config
         self.save = save
         self.finder = finder
-        self.remapper_factory = remapper_factory
+        # every controller connected (one over Bluetooth too) feeds the virtual one, each with its
+        # own profile - and later ones are found while it runs
+        self.remapper_factory = remapper_factory or (
+            lambda info, profile: Remapper(info, profile, find=self.devices, profile_for=self.profile))
         self.remapper: Remapper | None = None
         self.error = ""
         config.setdefault("input", {"enabled": False, "profiles": {}})
         self.cfg = config["input"]
         self.cfg.setdefault("profiles", {})
 
+    def devices(self) -> list[e.DeviceInfo]:
+        """Every controller connected (the built-in one first)."""
+        return self.finder() if self.finder is not None else e.find_gamepads()
+
     def device(self) -> e.DeviceInfo | None:
-        pads = self.finder() if self.finder is not None else e.find_gamepads()
+        pads = self.devices()
         return pads[0] if pads else None
 
     def profile(self, device: e.DeviceInfo) -> Profile:
@@ -95,11 +102,14 @@ class InputService:
         gives them nothing, and as the first one found it's often their "player 1" (GTA's GInput)."""
         if not self.running:
             return {}
-        info = self.remapper.info
-        try:
-            vendor, product = int(info.vendor, 16), int(info.product, 16)
-        except ValueError:
-            return {}
-        if (vendor, product) == (e.VIRTUAL_VENDOR, e.VIRTUAL_PRODUCT):
-            return {}  # the same id: skipping it would hide the virtual one too
-        return {"SDL_GAMECONTROLLER_IGNORE_DEVICES": f"0x{vendor:04x}/0x{product:04x}"}
+        hidden = []
+        for info in getattr(self.remapper, "infos", None) or [self.remapper.info]:  # (all read now)
+            try:
+                vendor, product = int(info.vendor, 16), int(info.product, 16)
+            except ValueError:
+                continue
+            if (vendor, product) == (e.VIRTUAL_VENDOR, e.VIRTUAL_PRODUCT):
+                continue  # the same id: skipping it would hide the virtual one too
+            if (entry := f"0x{vendor:04x}/0x{product:04x}") not in hidden:
+                hidden.append(entry)
+        return {"SDL_GAMECONTROLLER_IGNORE_DEVICES": ",".join(hidden)} if hidden else {}

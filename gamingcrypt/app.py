@@ -736,6 +736,7 @@ class MainWindow(QMainWindow):
             menu.bluetooth_requested.connect(self.open_bluetooth)
             menu.speed_chosen.connect(self.choose_speed)
             menu.in_step_chosen.connect(self.choose_in_step)
+            menu.pad_chosen.connect(self.choose_pad)
             menu.disc_chosen.connect(self.set_disc)
         watcher = self.game_watcher
         appid = watcher.appid if watcher.active and watcher.phase in ("starting", "playing") else None
@@ -753,6 +754,12 @@ class MainWindow(QMainWindow):
         chosen = getattr(self, "_chosen_in_step", None)
         menu.set_in_step(bool(retroarch_game) and (in_step or self.running_at_50_hz()),
                          in_step if chosen is None else chosen)
+        from gamingcrypt.emulation import retroarch
+
+        # the controller the game runs with - and the one it gets (chosen, or for its next start)
+        pad = self.game_profiles.get(rom.appid).get("pad") if retroarch_game else None
+        menu.set_pads(retroarch.pad_choices(rom.system.id) if retroarch_game else [],
+                      getattr(self, "running_pad", pad), getattr(self, "_chosen_pad", None) or (pad,))
         menu.set_speed_busy(getattr(self, "_speed_changing", False))
         menu.set_discs(len(rom.discs) if retroarch_game else 0, getattr(self, "disc_index", 0))
         menu.set_lock_shortcut(self.hotkeys["lock"])
@@ -902,11 +909,19 @@ class MainWindow(QMainWindow):
         """Quick menu: a 50 Hz game at 60 FPS or not - applied when it's closed."""
         self._chosen_in_step = on
 
+    def choose_pad(self, pad: str | None) -> None:
+        """Quick menu: the console's controller the game is played with - applied when it's closed."""
+        self._chosen_pad = (pad,)
+
     def apply_menu_choices(self) -> None:
         speed, self._chosen_speed = getattr(self, "_chosen_speed", None), None
         in_step, self._chosen_in_step = getattr(self, "_chosen_in_step", None), None
+        pad, self._chosen_pad = getattr(self, "_chosen_pad", None), None
         rom = self.running_rom()
         if rom is None or getattr(self, "_speed_changing", False):
+            return
+        if pad is not None and pad[0] != self.game_profiles.get(rom.appid).get("pad"):
+            self.set_pad(rom, pad[0], speed, in_step)
             return
         if in_step is not None and in_step != bool(self.game_profiles.get(rom.appid).get("in_step")):
             if speed is not None and speed != getattr(self, "speed", 1.0):
@@ -965,7 +980,7 @@ class MainWindow(QMainWindow):
             self.game_watcher.watch(appid, QUICK)
             return
         if appid >= EMU_APPID_BASE:  # an emulated game (RetroArch)
-            self.game_watcher.describe = lambda a: "Starting RetroArch…"
+            self.game_watcher.describe = self._retroarch_starting
             self.launch_overlay.show_for(self.game_name(appid), appid, None, self.cover_loader(appid))
             self.launch_overlay.set_phase("Starting RetroArch…")
             self.game_watcher.watch(appid)
@@ -978,6 +993,35 @@ class MainWindow(QMainWindow):
             self.game_watcher.describe = lambda a: launch_phase(a, None, name, progress=service.install_progress)
         self.launch_overlay.show_for(self.game_name(appid), appid, getattr(games, "service", None))
         self.game_watcher.watch(appid)
+
+    def _retroarch_starting(self, appid: int) -> str:
+        """While RetroArch starts: did it fail to load the game? It stays open, empty, then - the
+        loading screen never ended (Final Fantasy VIII without its LibCrypt .sbi files)."""
+        from gamingcrypt.emulation import retroarch
+
+        problem = retroarch.start_problem(config_mod.cache_dir() / "logs" / retroarch.LOG_NAME)
+        if problem is None:
+            return "Starting RetroArch…"
+        QTimer.singleShot(0, lambda: self._retroarch_failed(appid, problem))
+        return "The game didn't load"
+
+    def _retroarch_failed(self, appid: int, problem: str) -> None:
+        """RetroArch ended (nothing to wait for), the reason said - on the game's page and as a notice."""
+        watcher = self.game_watcher
+        if watcher.appid != appid:
+            return  # handled already
+        log.warning("app %s didn't load: %s", appid, problem)
+        from gamingcrypt.steam.running import force_quit
+
+        watcher._stop()
+        run_async(lambda: force_quit(appid), lambda _n: None, lambda _e: None, owner=self)
+        if self.shell is not None:
+            for page in self.shell.findChildren(QWidget):
+                hook = getattr(page, "start_failed", None)
+                if callable(hook):
+                    hook(appid, problem)
+        self.notify(problem, "⚠")
+        self.game_over(appid, failed=True)
 
     def adopt_running_game(self) -> None:
         watcher = self.game_watcher
@@ -1109,6 +1153,7 @@ class MainWindow(QMainWindow):
             self.follow_game_refresh(config_mod.cache_dir() / "logs" / retroarch.LOG_NAME)
             self.speed_mode, self.speed = "normal", 1.0  # RetroArch starts at normal speed
             self.running_rates = rates  # what "fast" and "slow" mean until it's started again
+            self.running_pad = profile.get("pad")
             self.disc_index = retroarch.current_disc(paths, game, retroarch.find_core(paths, game.system, core))
         return ok, message
 
@@ -1389,6 +1434,22 @@ class MainWindow(QMainWindow):
                               unsaved=("60 FPS" if on else "50 FPS") + " from the next start - this game can't be "
                                                                          "saved while it runs")
 
+    def set_pad(self, rom, pad: str | None, speed: float | None = None, in_step: bool | None = None) -> None:
+        """Quick menu: the console's controller (Wii U: Pro Controller or GamePad) - the core gets it
+        when RetroArch starts: the game is saved, started again, put back (with the speed / 60 FPS
+        chosen too); a game that can't be saved gets it from its next start."""
+        from gamingcrypt.emulation import retroarch
+
+        self.game_profiles.set(rom.appid, "pad", pad)
+        name = dict(retroarch.pad_choices(rom.system.id)).get(pad, "").split(" - ")[0]
+        if in_step is not None:
+            self.game_profiles.set(rom.appid, "in_step", True if in_step else None)
+        speed = speed if speed is not None else getattr(self, "speed", 1.0)
+        if speed != getattr(self, "speed", 1.0):
+            self._remember_speed(rom, speed)
+        self.restart_at_speed(rom, speed, text=f"Changing to the {name}…",
+                              unsaved=f"The {name} from the next start - this game can't be saved while it runs")
+
     def restart_at_speed(self, rom, speed: float, text: str = "", unsaved: str = "") -> None:
         import time
 
@@ -1612,7 +1673,7 @@ class MainWindow(QMainWindow):
         if isinstance(getattr(self, "menu_page", None), SaveStatesPage):
             self.close_menu_page(reopen=False)  # its game is gone
         self._speed_changing = False
-        self._paused = self._chosen_speed = self._chosen_in_step = None  # its game is gone
+        self._paused = self._chosen_speed = self._chosen_in_step = self._chosen_pad = None  # its game is gone
         # Pages showing "Starting <game>…" must not keep saying so after the game.
         if self.shell is not None and appid is not None:
             for page in self.shell.findChildren(QWidget):
