@@ -107,6 +107,7 @@ class AuthSetupWizard(QWidget):
         self.current_secret = ""
         self.new_method = ""
         self.new_secret = ""
+        self.users_lost_codes: list[str] = []  # who needs a new code from the admin now (their names)
         unlock = config["unlock"]
         self.volume = unlock.get("volume", "")
         self.mount_point = unlock.get("mount_point", "")
@@ -501,10 +502,12 @@ class AuthSetupWizard(QWidget):
 
         # the volume's password changed: the other users' codes go on working (their key slots
         # hang on a master key, see unlock/keyslots.py) - unless this is another volume altogether
+        with_codes = [u.name for u in users.all_users(self.config) if not u.admin and users.has_code(self.config, u.id)]
         if self.creating or self.first_start:
             users.forget_codes(self.config)
+            self.users_lost_codes = with_codes
         elif not users.admin_code_changed(self.config, self.current_secret, self.new_secret):
-            self.users_lost_codes = True
+            self.users_lost_codes = with_codes
         self.save(self.config)
         users.write_sidecar(self.config)
         set_status(self.status, "Done")

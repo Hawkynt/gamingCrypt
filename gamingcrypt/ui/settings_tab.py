@@ -30,6 +30,11 @@ LOCK_AFTER_SLEEP = [("Never", None), ("Right away", 0), ("After 5 minutes", 5), 
 API_KEY_RE = re.compile(r"^[0-9A-Fa-f]{32}$")
 
 
+def _names(names: list[str]) -> str:
+    """Mia / Mia and Ben / Mia, Ben and Lea."""
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
 class ApiKeyPage(QWidget):
     """Enter the Steam Web API key with the on-screen keyboard."""
 
@@ -549,7 +554,10 @@ class SettingsTab(QStackedWidget):
         """The admin's code is a new one: the lock after sleep checks that one from now on."""
         if self.wizard is not None and self.wizard.new_secret and self.code_changed is not None:
             self.code_changed(self.wizard.new_secret)
-        self._close_wizard("Unlock method changed")
+        lost = getattr(self.wizard, "users_lost_codes", None) or []
+        self._close_wizard("Unlock method changed" + (
+            f" - {_names(lost)} {'needs' if len(lost) == 1 else 'need'} a new code: give "
+            f"{'it' if len(lost) == 1 else 'them'} one below, in Users" if lost else ""))
 
     def _close_wizard(self, message: str) -> None:
         self.setCurrentWidget(self.overview)
