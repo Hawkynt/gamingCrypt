@@ -59,8 +59,9 @@ touch and controller, and can boot the device straight into a SteamOS-like gamin
 - 👾 **Emulation**: from NES to PS2, Sega 32X, GameCube, Wii, Wii U, 3DS and Switch, through RetroArch and
   Eden. Cores, covers and Dolphin's system files are downloaded for you; shaders and upscaling are
   included. Wii U games as `.wua` (or `.wud` / `.wux` with your console's keys in
-  `bios/Cemu/keys.txt`) - they can't be saved as states.
-- 🌐 **Console language** for Wii, Wii U and GameCube (🌐 Language on the system's page): the
+  `bios/Cemu/keys.txt`) - they can't be saved as states. They're played with a Wii U Pro
+  Controller; a game that needs the GamePad's screen or touch gets the GamePad in its ⚙ Options.
+- 🌐 **Console language** for Wii, Wii U and GameCube (⚙ Options → 🌐 Language on the system's page): the
   games show their text in it - like the device's language until you choose one.
 - 💾 **Save states**: nine slots per game in a 3 by 3 grid, each with a picture of the moment,
   the date and time it was saved and how long you had played up to it. States are only saved and
