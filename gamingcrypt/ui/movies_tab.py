@@ -12,7 +12,7 @@ from pathlib import Path
 
 import shiboken6
 from PySide6.QtCore import QObject, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
+from PySide6.QtGui import QColor, QPainter, QPixmap
 from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QScrollArea, QSizePolicy,
                                QStackedWidget, QVBoxLayout, QWidget)
 
@@ -45,12 +45,9 @@ def movie_cover(movie: Movie, w: int, h: int) -> QPixmap:
         rect = QRectF(w - size - 8, 8, size, size)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(theme.SUCCESS))
-        painter.drawEllipse(rect)
-        font = QFont()
-        font.setPixelSize(int(size * 0.6))
-        font.setBold(True)
-        painter.setFont(font)
-        painter.setPen(QColor("white"))
+        painter.drawPath(theme.cut_path(rect, size * 0.28))
+        painter.setFont(theme.display_font(int(size * 0.6)))
+        painter.setPen(QColor(theme.ON_SUCCESS))
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, "✓")
     if info.resume_at and info.total:
         bar = max(6, h // 40)

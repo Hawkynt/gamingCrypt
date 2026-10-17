@@ -22,6 +22,7 @@ include = ["gamingcrypt*"]
 
 [tool.setuptools.package-data]
 "gamingcrypt.movies" = ["*.lua"]  # mpv's touch controls
+"gamingcrypt.ui" = ["fonts/*"]  # the display face (SIL Open Font License, fonts/OFL.txt)
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

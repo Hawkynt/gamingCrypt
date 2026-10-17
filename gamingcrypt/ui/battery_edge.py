@@ -10,6 +10,8 @@ from PySide6.QtCore import QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QWidget
 
+from gamingcrypt.ui import theme
+
 SHOW_MS = 10_000
 BORDER = 12  # px
 RED = "#e5484d"
@@ -28,7 +30,8 @@ class BatteryEdge(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.card = QFrame(self)
         self.card.setObjectName("batteryAlert")
-        self.card.setStyleSheet(f"QFrame#batteryAlert {{ background: {RED}; border-radius: 14px; }}"
+        self.card.setStyleSheet(f"QFrame#batteryAlert {{ background: transparent; {theme.box('button', RED)}"
+                                f" padding: -{theme.SLICE['button']}px; }}"
                                 "QLabel { color: white; font-size: 22px; font-weight: 700; }")
         row = QHBoxLayout(self.card)
         row.setContentsMargins(20, 12, 22, 12)

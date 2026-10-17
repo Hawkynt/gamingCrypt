@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
+from PySide6.QtGui import QColor, QPainter, QPixmap
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 from gamingcrypt.movies import library as movies
@@ -44,21 +44,18 @@ def show_cover(show: Show, w: int, h: int) -> QPixmap:
     if regular and left == 0:
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(theme.SUCCESS))
-        painter.drawEllipse(rect)
+        painter.drawPath(theme.cut_path(rect, size * 0.28))
         label = "✓"
     elif regular and left < len(regular):  # started: how many are still to watch
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(theme.ACCENT))
-        painter.drawRoundedRect(rect.adjusted(-8 if left > 9 else 0, 0, 0, 0), size / 2, size / 2)
+        painter.drawPath(theme.cut_path(rect.adjusted(-8 if left > 9 else 0, 0, 0, 0), size * 0.28))
         label = str(left)
     else:
         label = ""
     if label:
-        font = QFont()
-        font.setPixelSize(int(size * 0.55))
-        font.setBold(True)
-        painter.setFont(font)
-        painter.setPen(QColor("white"))
+        painter.setFont(theme.display_font(int(size * 0.55)))
+        painter.setPen(QColor(theme.ON_ACCENT if label != "✓" else theme.ON_SUCCESS))
         painter.drawText(rect.adjusted(-8 if len(label) > 1 else 0, 0, 0, 0), Qt.AlignmentFlag.AlignCenter, label)
     if regular and 0 < left < len(regular):
         bar = max(6, h // 40)
