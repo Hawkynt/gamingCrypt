@@ -163,6 +163,7 @@ class RemoveWindowsConfirm(QFrame):
     """Really remove it? And its saves (the Wine prefix) too?"""
 
     removed = Signal(str)
+    failed = Signal(str)  # (not removed: the page stays, the message is an error)
     cancelled = Signal()
 
     def __init__(self, game: WindowsGame, parent: QWidget | None = None):
@@ -206,7 +207,7 @@ class RemoveWindowsConfirm(QFrame):
             self.removed.emit(f"{game.name} removed, {format_size(freed)} freed{kept}")
 
         run_async(lambda: library.remove(game, with_saves), done,
-                  lambda exc: self.removed.emit(f"Could not remove it: {exc}"), owner=self)
+                  lambda exc: self.failed.emit(f"Could not remove it: {exc}"), owner=self)
 
 
 class WindowsGamePage(QWidget):
@@ -424,6 +425,7 @@ class WindowsGamePage(QWidget):
         self.confirm = RemoveWindowsConfirm(self.game)
         self.confirm.cancelled.connect(self.close_confirm)
         self.confirm.removed.connect(self.removed)
+        self.confirm.failed.connect(self.remove_failed)
         from gamingcrypt.ui.modal import show_modal
 
         self.confirm_modal = show_modal(self, self.confirm, self.close_confirm)  # over the page and its Options
@@ -438,6 +440,11 @@ class WindowsGamePage(QWidget):
         self.tab.home.show_notice(message)
         self.tab.back()
         self.tab.reload_roms()
+
+    def remove_failed(self, message: str) -> None:
+        """It's still there: the page stays, and says why - in red, not as if it had worked."""
+        self.close_confirm()
+        self.say(message, error=True)
 
     def say(self, text: str, error: bool = False) -> None:
         set_status(self.status, text, error=error)

@@ -214,6 +214,24 @@ def test_remove_deletes_the_folder(qtbot, window, root):
     qtbot.waitUntil(lambda: [g.name for g in games.linux_games] == ["Stardew Valley"])
 
 
+def test_a_failed_removal_stays_on_the_page_and_says_why(qtbot, window, root, monkeypatch):
+    from gamingcrypt.wine import library
+
+    def fails(*a, **k):
+        raise OSError("Read-only file system")
+
+    monkeypatch.setattr(library, "remove", fails)
+    games = window._games
+    games.open_linux_game(next(g for g in games.linux_games if g.name == "Celeste"))
+    page = games.currentWidget()
+    page.options_button.click()
+    page.remove_button.click()
+    page.confirm.remove_button.click()
+    qtbot.waitUntil(lambda: "Read-only" in page.status.text())
+    assert games.currentWidget() is page and page.confirm is None and page.status.property("error")
+    assert (root / "Celeste").exists()
+
+
 def test_play_time_continue_recent_and_favorites(qtbot, window, monkeypatch):
     import time as time_mod
 

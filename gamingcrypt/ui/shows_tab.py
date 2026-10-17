@@ -427,6 +427,7 @@ class ShowPage(QWidget):
         self.confirm = RemoveMovieConfirm(show, show.root, question=question, work=lambda: library.remove(show))
         self.confirm.cancelled.connect(self.close_confirm)
         self.confirm.removed.connect(self.removed)
+        self.confirm.failed.connect(self.remove_failed)
         from gamingcrypt.ui.modal import show_modal
 
         self.confirm_modal = show_modal(self, self.confirm, self.close_confirm)  # over the page and its Options
@@ -441,6 +442,11 @@ class ShowPage(QWidget):
         self.tab.home.show_notice(message)
         self.tab.back()
         self.tab.reload()
+
+    def remove_failed(self, message: str) -> None:
+        """It's still there: the page stays, and says why - in red, not as if it had worked."""
+        self.close_confirm()
+        self.say(message, error=True)
 
     def game_session_ended(self, appid: int, failed: bool) -> None:
         if failed and appid in self.show_item.appids:

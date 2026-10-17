@@ -432,6 +432,7 @@ class MoviesHome(QWidget):
 
 class RemoveMovieConfirm(QFrame):
     removed = Signal(str)
+    failed = Signal(str)  # (not removed: the page stays, the message is an error)
     cancelled = Signal()
 
     def __init__(self, movie: Movie, root: Path, parent: QWidget | None = None, question: str | None = None,
@@ -470,7 +471,7 @@ class RemoveMovieConfirm(QFrame):
         movie = self.movie
         run_async(self.work,
                   lambda freed: self.removed.emit(f"{movie.title} removed, {format_size(freed)} freed"),
-                  lambda exc: self.removed.emit(f"Could not remove it: {exc}"), owner=self)
+                  lambda exc: self.failed.emit(f"Could not remove it: {exc}"), owner=self)
 
 
 class MoviePage(QWidget):
@@ -618,6 +619,7 @@ class MoviePage(QWidget):
         self.confirm = RemoveMovieConfirm(self.movie, self.tab.root)
         self.confirm.cancelled.connect(self.close_confirm)
         self.confirm.removed.connect(self.removed)
+        self.confirm.failed.connect(self.remove_failed)
         from gamingcrypt.ui.modal import show_modal
 
         self.confirm_modal = show_modal(self, self.confirm, self.close_confirm)  # over the page and its Options
@@ -632,6 +634,11 @@ class MoviePage(QWidget):
         self.tab.home.show_notice(message)
         self.tab.back()
         self.tab.reload()
+
+    def remove_failed(self, message: str) -> None:
+        """It's still there: the page stays, and says why - in red, not as if it had worked."""
+        self.close_confirm()
+        self.say(message, error=True)
 
     def game_session_ended(self, appid: int, failed: bool) -> None:
         if appid == self.movie.appid and failed:

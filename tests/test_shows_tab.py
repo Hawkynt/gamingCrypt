@@ -205,6 +205,22 @@ def test_remove_a_show(qtbot, root):
     assert not (root / "Breaking Bad (2008)").exists() and tab.home.notice.text().startswith("Breaking Bad removed")
 
 
+def test_a_failed_show_removal_stays_on_the_page_and_says_why(qtbot, root, monkeypatch):
+    def fails(*a, **k):
+        raise OSError("Permission denied")
+
+    monkeypatch.setattr(library, "remove", fails)
+    tab = make_tab(qtbot, root)
+    tab.open_show(next(s for s in tab.shows if s.title == "Breaking Bad"))
+    page = tab.currentWidget()
+    page.options_button.click()
+    page.remove_button.click()
+    page.confirm.remove_button.click()
+    qtbot.waitUntil(lambda: "Permission denied" in page.status.text())
+    assert tab.currentWidget() is page and page.confirm is None and page.status.property("error")
+    assert (root / "Breaking Bad (2008)").exists()
+
+
 def test_unknown_shows_are_looked_up(qtbot, root):
     (root / "The.Office.S01E01.mkv").write_bytes(b"v")
     tab = ShowsTab(root, lookup=FakeLookup())
