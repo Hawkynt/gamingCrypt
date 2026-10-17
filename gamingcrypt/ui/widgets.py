@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+
 import shiboken6
 from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QAbstractScrollArea,
+    QApplication,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -17,6 +20,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QVBoxLayout,
     QWidget,
+    QWidgetItem,
 )
 
 
@@ -70,6 +74,7 @@ class FlowLayout(QLayout):
     def __init__(self, parent: QWidget | None = None, spacing: int = 20, stretch: bool = False):
         super().__init__(parent)
         self._items = []
+        self._members: set[QWidget] = set()  # the widgets in _items (put: in it already?)
         self._spacing = spacing
         # stretch: as many (equally wide) items per row as fit, widened to fill the row exactly -
         # the same gap left and right
@@ -77,14 +82,39 @@ class FlowLayout(QLayout):
         # Qt asks heightForWidth() constantly (every resize / animation frame); with
         # hundreds of game cards recomputing it each time makes scrolling choppy.
         self._height_cache: dict[int, int] = {}
+        self._batching = 0
+        self._last_height: dict[int, int] = {}
+        self._last_minimum = QSize()
 
     def invalidate(self):
         self._height_cache.clear()
         super().invalidate()
 
+    @contextmanager
+    def batch(self):
+        """Many cards shown, hidden or re-ordered at once: laid out once, afterwards. Qt lays every
+        visible ancestor out again the moment a widget is shown - each card's show() meant the
+        whole grid once more: hundreds of games, a second the UI stood still (and longer on the
+        handheld). In between this answers with the sizes from before."""
+        self._batching += 1
+        try:
+            yield self
+        finally:
+            self._batching -= 1
+            if not self._batching:
+                self.invalidate()
+                parent = self.parentWidget()
+                if parent is not None and parent.isVisible():  # laid out now, once: where a card is counts
+                    # (the grid, the page around it, the scroll area: each asks the next one up
+                    # - and Qt keeps a request made while handling them for its next round)
+                    for _round in range(4):
+                        QApplication.sendPostedEvents(None, QEvent.Type.LayoutRequest)
+
     def addItem(self, item):  # noqa: N802 (Qt API)
         self._height_cache.clear()
         self._items.append(item)
+        if item.widget() is not None:
+            self._members.add(item.widget())
 
     def count(self):
         return len(self._items)
@@ -94,7 +124,12 @@ class FlowLayout(QLayout):
 
     def takeAt(self, index):  # noqa: N802
         self._height_cache.clear()
-        return self._items.pop(index) if 0 <= index < len(self._items) else None
+        if not 0 <= index < len(self._items):
+            return None
+        item = self._items.pop(index)
+        if shiboken6.isValid(item):  # (Qt hands back the item of a widget it deleted, deleted too)
+            self._members.discard(item.widget())
+        return item
 
     def expandingDirections(self):  # noqa: N802
         return Qt.Orientation(0)
@@ -103,33 +138,55 @@ class FlowLayout(QLayout):
         return True
 
     def heightForWidth(self, width):  # noqa: N802
+        if self._batching:  # (see batch)
+            return self._last_height.get(width, next(iter(self._last_height.values()), 0))
         if width not in self._height_cache:
             self._height_cache[width] = self._do_layout(QRect(0, 0, width, 0), apply=False)
+            self._last_height = {width: self._height_cache[width]}
         return self._height_cache[width]
 
     def setGeometry(self, rect):  # noqa: N802
         super().setGeometry(rect)
-        self._do_layout(rect, apply=True)
+        if not self._batching:
+            self._do_layout(rect, apply=True)
 
     def sizeHint(self):  # noqa: N802
         return self.minimumSize()
 
     def minimumSize(self):  # noqa: N802
+        if self._batching:
+            return self._last_minimum
         size = QSize()
         for item in self._items:
             size = size.expandedTo(item.minimumSize())
         m = self.contentsMargins()
-        return size + QSize(m.left() + m.right(), m.top() + m.bottom())
+        self._last_minimum = size + QSize(m.left() + m.right(), m.top() + m.bottom())
+        return self._last_minimum
+
+    def put(self, widget: QWidget) -> None:
+        """addWidget for a card put back after take_all: it's the parent's already and in no layout,
+        so it goes straight in - addWidget looks for it in the layout first, every item for every
+        card (a million looks for a thousand games)."""
+        if widget.parentWidget() is self.parentWidget() and widget not in self._members:
+            self.addItem(QWidgetItem(widget))
+        else:
+            self.addWidget(widget)
+
+    def widgets(self) -> list[QWidget]:
+        """In their order."""
+        return [item.widget() for item in self._items]
 
     def take_all(self) -> list[QWidget]:
         """Remove all widgets from the layout without deleting them (for re-ordering)."""
         widgets = [item.widget() for item in self._items if item.widget()]
         self._items = []
+        self._members = set()
         self._height_cache.clear()
         return widgets
 
     def clear(self) -> None:
         self._height_cache.clear()
+        self._members = set()
         while self._items:
             item = self._items.pop()
             if item.widget():
