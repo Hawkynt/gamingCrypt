@@ -47,7 +47,8 @@ SYSTEMS: tuple[System, ...] = (
     # one-file games (.wua, or .wud / .wux disc images with the console's keys.txt). Player 1 is a
     # Wii U Pro Controller (RetroArch's device 513 - the core's RETRO_DEVICE_PRO), not the GamePad:
     # some games want one; one that needs the GamePad's screen gets it back in its Options
-    # (retroarch.GAME_PADS). The core maps no Home button: Guide / Windows stay the quick menu.
+    # or the quick menu (retroarch.GAME_PADS) - it reaches the core on RetroArch's command line
+    # (retroarch.devices). The core maps no Home button: Guide / Windows stay the quick menu.
     System("wiiu", "Nintendo Wii U", (".wua", ".wud", ".wux"), ("cemu",), video="vulkan", save_states=False,
            extra=(("input_libretro_device_p1", "513"),)),
     System("mastersystem", "Sega Master System", (".sms",) + ARCHIVES, ("genesis_plus_gx", "picodrive")),

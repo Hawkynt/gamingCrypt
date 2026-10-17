@@ -214,7 +214,7 @@ RENDERER_VIDEO = {"accurate": "vulkan"}
 # always: Cemu draws with Vulkan (RetroArch's Vulkan driver, see systems) - its OpenGL path is
 # black under gamescope
 FIXED_OPTIONS = {"cemu": {"cemu_gpu_api": "Vulkan"}}
-# a game's own controller (its Options) instead of its system's - RetroArch's device for player 1:
+# a game's own controller (its Options, the quick menu) instead of its system's - RetroArch's device for player 1:
 # Wii U games are played with a Pro Controller (systems.py); the GamePad (RETRO_DEVICE_JOYPAD) for
 # one that needs its screen or touch
 GAME_PADS = {"wiiu": {"gamepad": ("1", "Wii U GamePad - for games that need its screen or touch")}}
@@ -311,10 +311,26 @@ def current_disc(paths: EmulationPaths, game: RomGame, core: Path | None) -> int
     return 0
 
 
-def command(game: RomGame, core: Path, config: Path, reaper_path: Path, shader: Path | None = None) -> list[str]:
+def devices(extra: dict[str, str]) -> list[str]:
+    """The controllers the core gets (input_libretro_device_pN) as ``--device`` arguments: RetroArch
+    reads them from no config file - every port is a plain joypad unless the command line says so."""
+    found = (re.fullmatch(r"input_libretro_device_p(\d+)", key) for key in extra)
+    return [f"--device={m[1]}:{extra[m[0]]}" for m in found if m]
+
+
+def command(game: RomGame, core: Path, config: Path, reaper_path: Path, shader: Path | None = None,
+            pads: list[str] | None = None) -> list[str]:
     return [str(reaper_path), "SteamLaunch", f"AppId={game.appid}", "--",
-            "retroarch", "--verbose", "--appendconfig", str(config),
+            "retroarch", "--verbose", "--appendconfig", str(config), *(pads or []),
             *([f"--set-shader={shader}"] if shader else []), "-L", str(core), str(game.path)]
+
+
+def pad_choices(system_id: str) -> list[tuple[str | None, str]]:
+    """(key, name) of the controllers a system's games can be played with - [] when there's one."""
+    pads = GAME_PADS.get(system_id, {})
+    if not pads:
+        return []
+    return [(None, DEFAULT_PADS[system_id])] + [(key, label) for key, (_device, label) in pads.items()]
 
 
 SHADER_PRESET = "gamingcrypt.slangp"  # in config/shaders: the ticked shaders of the game being started
@@ -393,7 +409,7 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
     log_dir.mkdir(parents=True, exist_ok=True)
     try:
         with open(log_dir / LOG_NAME, "wb") as log:  # this game's log (its frame rate is read from it)
-            popen(command(game, core, config, reaper(data_dir), shader), stdin=subprocess.DEVNULL, stdout=log,
+            popen(command(game, core, config, reaper(data_dir), shader, devices(extra)), stdin=subprocess.DEVNULL, stdout=log,
                   stderr=subprocess.STDOUT, start_new_session=True, env=dict(os.environ))
     except OSError as exc:
         return False, f"RetroArch didn't start: {exc}"

@@ -328,3 +328,47 @@ def test_a_game_that_cannot_be_saved_gets_it_from_the_next_start(qtbot, window, 
     qtbot.waitUntil(lambda: any("60 FPS from the next start" in t for t in toasts(window)), timeout=8000)
     assert stopped == [] and len(window._launches) == 1
     assert window.game_profiles.get(window._game.appid).get("in_step") is True
+
+
+@pytest.fixture
+def two_pads(monkeypatch):
+    """The test's console with two controllers to choose from (as the Wii U)."""
+    monkeypatch.setitem(retroarch.GAME_PADS, "snes", {"mouse": ("2", "SNES Mouse - for Mario Paint")})
+    monkeypatch.setitem(retroarch.DEFAULT_PADS, "snes", "SNES Controller")
+
+
+def test_another_controller_starts_the_game_again_where_it_was(qtbot, window, monkeypatch, two_pads):
+    pads = []
+    monkeypatch.setattr(retroarch, "launch", lambda game, *a, **k: pads.append(k.get("pad")) or window._launches.append(
+        (game.name, k.get("fast"), k.get("slow"))) or (True, "Starting"))
+    stopped = fake_retroarch(window, monkeypatch)
+    menu = playing(window)
+    assert menu.pad_button.isVisibleTo(menu) and menu.pad_button.text() == "🎮  SNES Controller"
+    menu.pad_button.click()
+    assert "starts again with the SNES Mouse" in menu.status.text() and pads == [None]  # not yet
+    menu.close_menu()
+    qtbot.waitUntil(lambda: len(window._launches) == 2 and menu.pad_button.isEnabled(), timeout=8000)
+    assert stopped == [window._game.appid] and pads == [None, "mouse"]
+    assert window._sent == ["SAVE_STATE", "LOAD_STATE_SLOT 99"]  # back where it was
+    assert window.game_profiles.get(window._game.appid).get("pad") == "mouse"  # kept for this game
+    window.toggle_quick_menu()
+    assert menu.pad_button.text() == "🎮  SNES Mouse" and menu.status.text() == ""
+    window.game_over(window._game.appid)
+    window.game_watcher._stop()
+
+
+def test_a_game_that_cannot_be_saved_gets_the_controller_from_its_next_start(qtbot, window, monkeypatch, two_pads):
+    stopped = fake_retroarch(window, monkeypatch, saves=False)
+    monkeypatch.setattr("gamingcrypt.emulation.savestates.capture", lambda *a, **k: False)
+    menu = playing(window)
+    menu.pad_button.click()
+    menu.close_menu()
+    qtbot.waitUntil(lambda: any("The SNES Mouse from the next start" in t for t in toasts(window)), timeout=8000)
+    assert stopped == [] and len(window._launches) == 1
+    assert window.game_profiles.get(window._game.appid).get("pad") == "mouse"
+    window.toggle_quick_menu()  # still played with the controller it started with - said so
+    assert menu.pad_button.text() == "🎮  SNES Mouse" and "SNES Mouse" in menu.status.text()
+    menu.pad_button.click()  # back to it: nothing to do
+    assert menu.status.text() == ""
+    menu.close_menu()
+    assert window.game_profiles.get(window._game.appid).get("pad") is None and len(window._launches) == 1

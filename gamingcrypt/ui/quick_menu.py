@@ -49,6 +49,7 @@ class QuickMenu(QWidget):
     speed_chosen = Signal(float)  # emulated game: 0.1 - 10 times as fast
     in_step_chosen = Signal(bool)  # emulated 50 Hz game: at the screen's 60 FPS (a fifth faster)
     disc_chosen = Signal(int)  # emulated game on several discs: change to this one (0-based)
+    pad_chosen = Signal(object)  # emulated game: the console's controller to play with (Wii U: Pro / GamePad)
 
     def __init__(self, parent: QWidget, system: SystemControls,
                  refresh_get: Callable[[], int] = gamescope_ctl.dynamic_refresh,
@@ -200,6 +201,12 @@ class QuickMenu(QWidget):
         self.in_step_button.toggled.connect(self._in_step_toggled)
         self.in_step_button.hide()
         line.addWidget(self.in_step_button, 1)
+        self.pad_button = big_button("")  # each tap: the next controller
+        self.pad_button.clicked.connect(self._next_pad)
+        self.pad_button.hide()
+        line.addWidget(self.pad_button, 1)
+        self.pads: list[tuple[str | None, str]] = []
+        self.pad, self.running_pad = None, None
         self.box.addWidget(row)
         self.controls_row = row
         self.pair_rows.append(row)
@@ -261,7 +268,7 @@ class QuickMenu(QWidget):
         left = [[self.output], [self.input], [self.volume], [self.brightness], [self.refresh],
                 [self.keep_button, self.revert_button], [self.power], [self.fps], [self.bluetooth_button]]
         right = [[self.back_button], [self.overlay_button, self.screenshot_button],
-                 [self.save_state_button, self.load_state_button], [self.controls_button, self.in_step_button],
+                 [self.save_state_button, self.load_state_button], [self.controls_button, self.in_step_button, self.pad_button],
                  [self.speed], [self.disc_prev, self.disc_next], [self.quit_button],
                  [self.lock_button]]
         return [r for r in map(usable, left) if r], [r for r in map(usable, right) if r]
@@ -358,6 +365,30 @@ class QuickMenu(QWidget):
         self.in_step_button.setVisible(offered)
         self.running_in_step = on
 
+    def set_pads(self, pads: list[tuple[str | None, str]], running=None, chosen: tuple | None = None) -> None:
+        """The controllers the game can be played with ((key, name), the console's own first) - the
+        one it runs with and the one chosen meanwhile ((key,), None: none); hidden when there's only one."""
+        self.pads = pads
+        self.running_pad = running
+        self.pad = chosen[0] if chosen else running
+        self._pad_text()
+        self.pad_button.setVisible(bool(pads))
+
+    def _pad_name(self, key) -> str:
+        return next((name for k, name in self.pads if k == key), "").split(" - ")[0]
+
+    def _pad_text(self) -> None:
+        self.pad_button.setText("🎮  " + self._pad_name(self.pad))
+
+    def _next_pad(self) -> None:
+        keys = [key for key, _name in self.pads]
+        if not keys:
+            return
+        self.pad = keys[(keys.index(self.pad) + 1) % len(keys)] if self.pad in keys else keys[0]
+        self._pad_text()
+        self.pad_chosen.emit(self.pad)  # applied once the menu is closed
+        self._restart_note()
+
     def _in_step_text(self) -> None:
         self.in_step_button.setText(("☑" if self.in_step_button.isChecked() else "☐") + "  60 FPS (50 Hz game)")
 
@@ -372,26 +403,32 @@ class QuickMenu(QWidget):
         self.speed_chosen.emit(SPEEDS[index])  # applied once the menu is closed
         self._restart_note()
 
-    RESTART_NOTE = "When you go back, the game starts again at {what} - where you are is kept"
+    RESTART_NOTE = "When you go back, the game starts again {what} - where you are is kept"
     NEXT_START_NOTE = "{what} from the next start - this game can't be saved while it runs"
 
     def _restart_note(self) -> None:
-        """A new speed (or 60 FPS) is applied by starting the game again, after the menu is closed:
-        said here, while it can still be read - the game going black and back is no surprise."""
+        """A new speed, 60 FPS or controller is applied by starting the game again, after the menu
+        is closed: said here, while it can still be read - the game going black and back is no surprise."""
         from gamingcrypt.emulation.retroarch import SPEEDS
 
         speed = SPEEDS[self.speed.value()]
         in_step = self.in_step_button.isChecked() if self.in_step_button.isVisibleTo(self) else self.running_in_step
-        changes = []
+        rates = []
         if speed != self.running_speed:
-            changes.append(f"{speed:g}x")
+            rates.append(f"{speed:g}x")
         if in_step != self.running_in_step:
-            changes.append("60 FPS" if in_step else "50 FPS")
-        if not changes:
+            rates.append("60 FPS" if in_step else "50 FPS")
+        pad = (f"the {self._pad_name(self.pad)}"
+               if self.pad_button.isVisibleTo(self) and self.pad != self.running_pad else "")
+        if not rates and not pad:
             set_status(self.status, "")
             return
-        what = " and ".join(changes)
-        set_status(self.status, (self.RESTART_NOTE if self.with_states else self.NEXT_START_NOTE).format(what=what))
+        if self.with_states:
+            what = " and ".join(([f"at {' and '.join(rates)}"] if rates else []) + ([f"with {pad}"] if pad else []))
+            set_status(self.status, self.RESTART_NOTE.format(what=what))
+            return
+        what = " and ".join(rates + ([pad] if pad else []))
+        set_status(self.status, self.NEXT_START_NOTE.format(what=what[0].upper() + what[1:]))  # (starts the sentence)
 
     def show_speed(self, speed: float) -> None:
         """The speed the game runs at - nothing is applied."""
@@ -404,6 +441,7 @@ class QuickMenu(QWidget):
         """While the game comes back at a new speed: no other one yet."""
         self.speed.setEnabled(not busy)
         self.in_step_button.setEnabled(not busy)
+        self.pad_button.setEnabled(not busy)
         set_status(self.status, text)
 
     def set_discs(self, count: int, current: int = 0) -> None:
@@ -463,7 +501,7 @@ class QuickMenu(QWidget):
                                  else "▶  Back")
         self.quit_button.setVisible(appid is not None)
         self._quit_label()
-        set_status(self.status, "")
+        self._restart_note()  # (a controller for the next start: still said)
         self._load_values()
         self.update_battery()
         self.battery_timer.start(1000)

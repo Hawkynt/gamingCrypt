@@ -420,6 +420,9 @@ def test_nothing_is_cut_off_at_the_right_with_every_text_size(menu, size):
         m.set_performance(limit=Limit(), watts=15, fps=0, overlay=False, in_game=True)
         m.set_emulated(True, 1.0)
         m.set_in_step(True)
+        from gamingcrypt.emulation import retroarch
+
+        m.set_pads(retroarch.pad_choices("wiiu"))
         m.set_discs(3, 0)
         m.open_menu(0x70000001, "The Legend of Zelda: Ocarina of Time")
         m._test_host.grab()
@@ -488,6 +491,35 @@ def test_a_new_speed_says_the_game_starts_again(qtbot, menu):
     m.open_menu(0x70000001, "Doom")
     m.speed.setValue(SPEEDS.index(0.5))
     assert m.status.text() == "0.5x from the next start - this game can't be saved while it runs"
+
+
+def test_the_wii_u_controller_is_switched_in_the_menu(menu):
+    """Wii U: each tap the next controller (Pro Controller, GamePad) - applied once the menu is
+    closed; a game that can't be saved gets it from its next start, said while the menu is open."""
+    from gamingcrypt.emulation import retroarch
+
+    m, *_ = menu
+    chosen = []
+    m.pad_chosen.connect(chosen.append)
+    m.set_emulated(True, 1.0, states=False)
+    m.set_pads([])
+    m.open_menu(0x70000001, "Mario")
+    assert not m.pad_button.isVisibleTo(m)  # a console with one controller
+    m.set_pads(retroarch.pad_choices("wiiu"))
+    assert m.pad_button.isVisibleTo(m) and m.pad_button.text() == "🎮  Wii U Pro Controller"
+    m.pad_button.click()
+    assert chosen == ["gamepad"] and m.pad_button.text() == "🎮  Wii U GamePad"
+    assert m.status.text() == "The Wii U GamePad from the next start - this game can't be saved while it runs"
+    m.pad_button.click()
+    assert chosen == ["gamepad", None] and m.status.text() == ""  # as it runs
+    m.set_pads(retroarch.pad_choices("wiiu"), running="gamepad")
+    assert m.pad_button.text() == "🎮  Wii U GamePad"
+    m.set_pads(retroarch.pad_choices("wiiu"), running="gamepad", chosen=(None,))  # (chosen, not applied yet)
+    assert m.pad_button.text() == "🎮  Wii U Pro Controller"
+    m.set_pads(retroarch.pad_choices("wiiu"), running="gamepad")
+    m.set_emulated(True, 1.0)  # one that can be saved: started again right away
+    m.pad_button.click()
+    assert m.status.text() == "When you go back, the game starts again with the Wii U Pro Controller - where you are is kept"
 
 
 def test_state_and_bluetooth_buttons_ask_for_their_pages(menu):
