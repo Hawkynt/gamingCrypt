@@ -239,8 +239,11 @@ class QuickMenu(QWidget):
         self.lock_button = big_button("🔒  Lock now")
         self.lock_button.clicked.connect(self._lock)
         self.box.addWidget(self.lock_button)
-        hint = _label("Lock shortcut: hold the Windows button and press Volume Down", "cardMeta")
+        from gamingcrypt.input import hotkeys
+
+        hint = self.lock_hint = _label("", "cardMeta")
         hint.setWordWrap(True)
+        self.set_lock_shortcut(hotkeys.WINDOWS["lock"])  # (the app says which it is on this device)
         self.left_column.addWidget(hint)  # under the settings: the game column is the full one
         self.status = _label("", "status")
         self.box.addWidget(self.status)
@@ -470,6 +473,10 @@ class QuickMenu(QWidget):
         self.raise_()
         self.show()
         self.back_button.setFocus()
+
+    def set_lock_shortcut(self, binding) -> None:
+        """The device buttons that lock (hotkeys.Binding) - set in Settings, they differ per device."""
+        self.lock_hint.setText(f"Lock shortcut: {binding.how_to()}")
 
     def fit(self) -> None:
         """Everything inside the panel, with every text size (nothing cut off at the right):

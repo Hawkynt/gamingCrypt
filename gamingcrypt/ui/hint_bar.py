@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QAbstractButton, QApplication, QComboBox, QLabel, QLineEdit, QSlider, QWidget
 
-COMMON = "LB / RB  Tabs     ⊞  Quick menu"
+COMMON = "LB / RB  Tabs     {menu}  Quick menu"  # {menu}: its button(s) on this device (hotkeys.py)
+MENU = "⊞"  # until the app says which it is
 PAGES = "LT / RT  Page"  # in long lists (navigator.page)
 
 
@@ -27,7 +28,7 @@ def card_hint(widget: QWidget | None) -> str | None:
     return None
 
 
-def hints_for(widget: QWidget | None) -> str:
+def hints_for(widget: QWidget | None, menu: str = MENU) -> str:
     card = card_hint(widget)
     if card is not None:
         first = card
@@ -45,7 +46,7 @@ def hints_for(widget: QWidget | None) -> str:
         first += "     Ⓨ  Picture"
     if in_list(widget):
         first += f"     {PAGES}"
-    return f"{first}     {COMMON}"
+    return f"{first}     {COMMON.format(menu=menu)}"
 
 
 def in_list(widget: QWidget | None) -> bool:
@@ -83,11 +84,20 @@ class HintBar(QLabel):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setObjectName("hintBar")
+        self.menu = MENU
         self.setText(hints_for(None))
         app = QApplication.instance()
         if app is not None:
             app.focusChanged.connect(self._focus_changed)
 
+    def set_quick_menu(self, binding) -> None:
+        """The button(s) that open the quick menu on this device (hotkeys.Binding): Guide on a
+        Steam Deck, not a Windows key it hasn't got."""
+        self.menu = " + ".join(binding.parts())
+        focused = QApplication.focusWidget()
+        self.setText(hints_for(focused if focused is not None and focused.window() is self.window() else None,
+                               self.menu))
+
     def _focus_changed(self, _old, new) -> None:
         if new is not None and self.window() is new.window():
-            self.setText(hints_for(new))
+            self.setText(hints_for(new, self.menu))

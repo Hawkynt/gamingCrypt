@@ -256,6 +256,9 @@ class MainWindow(QMainWindow):
         keys = getattr(self, "volume_keys", None)
         if keys is not None:
             keys.tracker.bindings = self.hotkeys
+        shell = getattr(self, "shell", None)
+        if shell is not None:
+            shell.hint_bar.set_quick_menu(self.hotkeys["quick_menu"])
 
     def pad_hotkey(self, ev_type: int, code: int, value: int) -> bool:
         """Controller buttons bound as device buttons (e.g. Guide = quick menu); also in a game."""
@@ -752,6 +755,7 @@ class MainWindow(QMainWindow):
                          in_step if chosen is None else chosen)
         menu.set_speed_busy(getattr(self, "_speed_changing", False))
         menu.set_discs(len(rom.discs) if retroarch_game else 0, getattr(self, "disc_index", 0))
+        menu.set_lock_shortcut(self.hotkeys["lock"])
         menu.open_menu(appid, self.game_name(appid) if appid else "")
         if rom is not None and watcher.phase == "playing":
             self.pause_game(rom)  # an emulated game stands still while the menu is open
@@ -1903,6 +1907,7 @@ class MainWindow(QMainWindow):
 
         # (what the admin locked for this user isn't there)
         self.shell = Shell(pages, show_hints=in_gaming_session(), locked=users.current(self.config).locked)
+        self.shell.hint_bar.set_quick_menu(self.hotkeys["quick_menu"])
         self.use_own_steam_account(service)
         theme.on_change(self.retheme)
         self.shell.exit_requested.connect(self.desktop_mode)
@@ -2003,12 +2008,13 @@ class MainWindow(QMainWindow):
     welcome_enabled = True  # tests switch it off
 
     def show_welcome(self) -> None:
-        from gamingcrypt.ui.tour import Tour
+        from gamingcrypt.ui.tour import Tour, tour
 
         if self.config.get("tour_done"):
             self.show_news()
             return
-        self.tour = Tour(self)
+        # in the words of this device: its quick menu button, what its power button does
+        self.tour = Tour(self, tour(self.hotkeys["quick_menu"], self.config["system"].get("power_button", "menu")))
         self.tour.finished.connect(self._tour_done)
         self.tour.open()
 

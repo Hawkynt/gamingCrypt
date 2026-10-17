@@ -532,8 +532,11 @@ class OverlayBarSection(Section):
         self.config, self.save = config, save
         self.write = write or gamescope_ctl.set_bar
         self.settings = overlay_bar.settings_of(config)
+        from gamingcrypt.input import hotkeys
+
+        menu = " + ".join(hotkeys.load(config)["quick_menu"].parts())  # (its button on this device)
         self.body.addWidget(_label("Over a game: FPS, battery, time … - switched on and off in the quick menu "
-                                   "(⊞ → Performance overlay)."))
+                                   f"({menu} → Performance overlay)."))
         self.choices: dict[str, dict] = {}
         for key, caption, table in (("position", "Position", overlay_bar.POSITIONS),
                                     ("size", "Size", overlay_bar.SIZES)):

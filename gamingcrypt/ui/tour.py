@@ -28,6 +28,26 @@ TOUR = [
     ("✓", "If something doesn't work",
      "Settings → System shows what's missing and how to fix it - usually by running ./install.sh again."),
 ]
+
+
+def tour(quick_menu=None, power_button: str = "menu") -> list[tuple[str, str, str]]:
+    """The pages, in the words of this device: the button that opens the quick menu (a
+    hotkeys.Binding - no Windows button on a Steam Deck) and what the power button does here
+    (config "system"."power_button": "menu" or "sleep")."""
+    pages = list(TOUR)
+    if quick_menu is not None:
+        icon, title, text = pages[1]
+        how = quick_menu.how_to()
+        opens = (f"The {quick_menu.parts()[0]} button opens" if len(quick_menu.codes) == 1
+                 else f"{how[0].upper()}{how[1:]} to open")  # (the buttons' names keep their capitals)
+        pages[1] = (icon, title, text.replace("The Windows button opens", opens))
+    if power_button != "sleep":
+        icon, title, _text = pages[2]
+        pages[2] = (icon, title, "The power button opens the power menu: sleep, shut down, restart, restart into "
+                                 "Windows and desktop mode - like ⏻ at the top right.")
+    return pages
+
+
 MAX_NEWS_LINES = 40  # the list scrolls
 WINDOW_MARGIN = 40  # the card keeps this far from the window's edges
 
@@ -65,8 +85,9 @@ class _Overlay(QWidget):
 class Tour(_Overlay):
     finished = Signal()
 
-    def __init__(self, parent: QWidget):
+    def __init__(self, parent: QWidget, pages: list[tuple[str, str, str]] | None = None):
         super().__init__(parent)
+        self.pages = pages or tour()
         self.icon = QLabel("")
         self.icon.setObjectName("title")
         self.title = QLabel("")
@@ -100,21 +121,21 @@ class Tour(_Overlay):
         self.show_step(0)
 
     def show_step(self, step: int) -> None:
-        self.step = max(0, min(len(TOUR) - 1, step))
-        icon, title, text = TOUR[self.step]
+        self.step = max(0, min(len(self.pages) - 1, step))
+        icon, title, text = self.pages[self.step]
         self.icon.setText(icon)
         self.title.setText(title)
         self.text.setText(text)
         self.fit(self.text)
-        self.step_label.setText(f"{self.step + 1} / {len(TOUR)}")
+        self.step_label.setText(f"{self.step + 1} / {len(self.pages)}")
         self.back_button.setEnabled(self.step > 0)
-        last = self.step == len(TOUR) - 1
+        last = self.step == len(self.pages) - 1
         self.next_button.setText("Let's go" if last else "Next  ›")
         self.skip_button.setVisible(not last)
         self.next_button.setFocus()
 
     def next(self) -> None:
-        if self.step == len(TOUR) - 1:
+        if self.step == len(self.pages) - 1:
             self.finish()
         else:
             self.show_step(self.step + 1)
