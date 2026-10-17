@@ -100,6 +100,9 @@ def test_progress_states(steam_root):
     assert installer.progress(steam_root, 5).state == "installed"
     path.write_text('"AppState" {')
     assert installer.progress(steam_root, 5).state == "queued"
+    manifest(1026 | installer.STATE_UPDATE_PAUSED, 250, 1000)  # the queue paused it: another goes first
+    p = installer.progress(steam_root, 5)
+    assert p.state == "paused" and p.percent == 25.0  # not "downloading", as the Downloads tab says
 
 
 def test_client_start_silent():
