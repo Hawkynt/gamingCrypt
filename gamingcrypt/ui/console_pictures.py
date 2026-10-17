@@ -132,20 +132,29 @@ PICTURES["3ds"] = Picture("landscape", {**_face("X", "Y", "A", "B", 800, 270, 60
                                          "ZR": (690, 95, "small"), "Select": (760, 430, "small"),
                                          "Start": (860, 430, "small")},
                           dpad=(200, 340), sticks=((200, 210),), screen=(340, 140, 320, 250))
-# the Wii Remote, the Nunchuk's C and Z beside it
-PICTURES["wii"] = Picture("rect", {"A": (690, 300, "big"), "B": (800, 230, "face"), "1": (690, 410, "face"),
-                                   "2": (800, 410, "face"), "−": (430, 330, "small"), "Home": (500, 380, "small"),
-                                   "+": (570, 330, "small"), "C": (620, 160, "small"), "Z": (730, 160, "small"),
-                                   "Shake Wii Remote": (840, 130, "small"), "Shake Nunchuk": (160, 130, "small")},
-                          dpad=(230, 300), sticks=((230, 450),),
-                          colors={"A": "#8a93a8", "B": "#8a93a8"})
-# the Wii U GamePad: a screen between the sticks
-PICTURES["wiiu"] = Picture("landscape", {**_face("X", "Y", "A", "B", 820, 300, 55), "L": (190, 95, "shoulder"),
-                                         "ZL": (310, 95, "small"), "R": (810, 95, "shoulder"),
-                                         "ZR": (690, 95, "small"), "−": (700, 450, "small"),
-                                         "+": (790, 450, "small"), "L3": (120, 450, "small"),
-                                         "R3": (880, 450, "small")},
-                           dpad=(180, 330), sticks=((180, 200), (820, 170)), screen=(330, 130, 340, 260))
+# as it's held: the Wii Remote upright - the D-pad on top, the big A, − Home +, then 1 and 2;
+# B is the trigger underneath (the tab on its side) - and the Nunchuk on its cable, the stick on
+# its head, C and Z on its front edge. Shaking either is a button of its own, next to it.
+PICTURES["wii"] = Picture("wii", {"A": (650, 245, "big"), "B": (790, 245, "face"),
+                                  "−": (595, 345, "c"), "Home": (650, 345, "c"), "+": (705, 345, "c"),
+                                  "1": (650, 422, "c"), "2": (650, 497, "c"),
+                                  "C": (238, 132, "c"), "Z": (340, 130, "small"),
+                                  "Shake Wii Remote": (870, 470, "small"), "Shake Nunchuk": (110, 470, "small")},
+                          dpad=(650, 110), sticks=((288, 250),), small_dpad=True,
+                          colors={"A": "#8a93a8", "B": "#8a93a8"},
+                          decor=(("cable", 288, 470, 300, 552, 610, 560, 650, 540),  # Nunchuk -> Remote
+                                 ("bar", 650, 33, 104, 16, "#11141b")))  # the remote's IR window
+# the Wii U Pro Controller - what Wii U games are played with (systems.py): both sticks on top, the
+# D-pad under the left one, A B X Y under the right one, − ⌂ + between them (⌂ is GamingCrypt's
+# quick menu button: drawn, not a button of the game's), the four player lights below
+PICTURES["wiiu"] = Picture("pad", {**_face("X", "Y", "A", "B", 750, 377, 58), "L": (250, 105, "shoulder"),
+                                   "R": (750, 105, "shoulder"), "ZL": (250, 48, "shoulder"),
+                                   "ZR": (750, 48, "shoulder"), "−": (440, 250, "c"), "+": (560, 250, "c"),
+                                   "L3": (250, 215, "face"), "R3": (750, 215, "face")},
+                           dpad=(250, 377), sticks=((250, 215), (750, 215)),
+                           decor=(("dot", 500, 250, 23, "#3a4152", "⌂"),
+                                  *(("led", 470 + 20 * i, 330, 5, "#4aa3ff" if i == 0 else "#3a4152")
+                                    for i in range(4))))
 PICTURES["gbc"] = PICTURES["gb"]
 PICTURES["segacd"] = PICTURES["megadrive"]
 PICTURES["sega32x"] = PICTURES["megadrive"]
@@ -153,7 +162,7 @@ GENERIC = Picture("pad", {**_face("X", "Y", "A", "B"), "L": (250, 115, "shoulder
                           "L2": (250, 55, "shoulder"), "R2": (750, 55, "shoulder"), "L3": (390, 440, "face"),
                           "R3": (610, 440, "face"), **SELECT_START})
 SHORT_TEXT = {"C-Left": "C◀", "C-Down": "C▼", "Up": "▲", "Down": "▼", "Left": "◀", "Right": "▶", "Triangle": "△", "Circle": "○", "Square": "□", "Cross": "✕", "C-buttons (stick)": "C-stick",
-              "Touch / Mic": "Touch", "Shake Wii Remote": "Shake", "Shake Nunchuk": "Shake N", "L trigger": "L", "R trigger": "R", "Turbo B": "Turbo B",
+              "Touch / Mic": "Touch", "Shake Wii Remote": "Shake", "Shake Nunchuk": "Shake N", "Home": "⌂", "L trigger": "L", "R trigger": "R", "Turbo B": "Turbo B",
               **{f"Button {i}": str(i) for i in range(1, 7)}}
 
 
@@ -225,6 +234,13 @@ def _body(shape: str) -> QPainterPath:
         rounded(90, 130, 820, 230, 110)
         for x in (220, 500, 780):
             rounded(x - 95, 200, 190, 330, 90)
+    elif shape == "wii":  # the Wii Remote upright, B's trigger tab on its side; the Nunchuk: head and tail
+        rounded(565, 14, 170, 531, 64)
+        rounded(700, 210, 128, 70, 35)
+        head = QPainterPath()
+        head.addEllipse(QPointF(288, 245), 118, 108)
+        parts.append(head)
+        rounded(203, 255, 170, 220, 85)
     elif shape == "portrait":
         rounded(320, 20, 360, 530, 40)
     elif shape == "landscape":
@@ -242,6 +258,14 @@ def _body(shape: str) -> QPainterPath:
 def paint(painter: QPainter, pic: Picture, body: str = theme.SURFACE_HI, outline: str = theme.TEXT_DIM) -> None:
     """The controller's body, D-pad, sticks and screen (the buttons are widgets)."""
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    for item in pic.decor:
+        if item[0] == "cable":  # under the bodies: they hide its ends
+            _kind, x1, y1, cx1, cy1, cx2, cy2, x2, y2 = item
+            cable = QPainterPath(QPointF(x1, y1))
+            cable.cubicTo(QPointF(cx1, cy1), QPointF(cx2, cy2), QPointF(x2, y2))
+            painter.setPen(QPen(QColor(outline), 7, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawPath(cable)
     painter.setPen(QPen(QColor(outline), 3))
     painter.setBrush(QColor(body))
     painter.drawPath(_body(pic.body))
@@ -251,6 +275,10 @@ def paint(painter: QPainter, pic: Picture, body: str = theme.SURFACE_HI, outline
             _kind, x, y, r = item
             painter.setBrush(QColor(0, 0, 0, 55))
             painter.drawEllipse(QPointF(x, y), r, r)
+        elif item[0] == "bar":  # e.g. the Wii Remote's IR window
+            _kind, x, y, w, h, color = item
+            painter.setBrush(QColor(color))
+            painter.drawRoundedRect(QRectF(x - w / 2, y - h / 2, w, h), h / 2, h / 2)
     if pic.screen:
         x, y, w, h = pic.screen
         painter.setBrush(QColor("#0b0d12"))

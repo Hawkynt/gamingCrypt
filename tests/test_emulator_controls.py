@@ -53,6 +53,40 @@ def test_every_console_button_is_in_its_picture():
         assert set(buttons) <= set(console_pictures.picture(sid).buttons), sid
 
 
+def test_the_wii_picture_is_the_remote_and_the_nunchuk():
+    """As held: the Wii Remote upright, the Nunchuk on its cable. Every button on its controller
+    (shaking aside), none of them - or the caption under it - on another."""
+    from PySide6.QtCore import QRectF
+
+    from gamingcrypt.ui import console_pictures as cp
+
+    pic = cp.picture("wii")
+    body = cp._body(pic.body)
+    rects = {}
+    for name, (x, y, kind) in pic.buttons.items():
+        w, h = cp.SIZES[kind]
+        rects[name] = QRectF(x - w / 2, y - h / 2, w, h)
+    for name, rect in rects.items():
+        if name in ("C", "Z"):  # on the Nunchuk's front edge, as the shoulder buttons elsewhere
+            assert body.intersects(rect) and not body.contains(rect), name
+        elif not name.startswith("Shake"):
+            assert body.contains(rect.center()), name
+        assert QRectF(0, 0, cp.W, cp.H).contains(rect), name
+    caption = 22  # (what the button is on the player's controller, under it)
+    names = list(rects)
+    dpad = set(cp.dpad_buttons(pic))  # (their captions sit in the cross's middle, as everywhere)
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            if a in dpad and b in dpad:
+                continue
+            assert not rects[a].adjusted(0, 0, 0, caption).intersects(rects[b]), (a, b)
+            assert not rects[b].adjusted(0, 0, 0, caption).intersects(rects[a]), (a, b)
+    remote, nunchuk = pic.buttons["A"], pic.buttons["C"]
+    assert pic.dpad[1] < remote[1] < pic.buttons["1"][1] < pic.buttons["2"][1]  # top to bottom, as held
+    assert nunchuk[0] < remote[0] and any(d[0] == "cable" for d in pic.decor)
+    assert cp.button_text("Home") == "⌂"
+
+
 def test_select_then_press_assigns(qtbot, store):
     from gamingcrypt.input import evdev as e
     from gamingcrypt.ui.controls_page import ControlsPage
@@ -132,12 +166,63 @@ def test_system_page_has_controls(qtbot, emu, store):
     tab = games_tab(qtbot, emu, store)
     tab.open_system("psx")
     system_page = tab.currentWidget()
+    system_page.options_button.click()  # (the console's settings are in its Options)
     assert system_page.controls_button.isVisible()
     system_page.controls_button.click()
     page = tab.currentWidget()
     assert isinstance(page, ControlsPage) and page.system == "psx"
+    assert not system_page.options_popup.is_open() and not system_page.options_button.isChecked()
     page.done_button.click()
     assert tab.currentWidget() is system_page
+
+
+def test_a_consoles_name_is_whole_on_1280_px_with_every_text_size(qtbot, emu, store):
+    """Controls, Shaders, Upscaling, Language and Add ROMs side by side cut the console's name off
+    (and pushed the page past the screen with larger text): the console's settings are in its
+    ⚙ Options now - each with a line on what it does - Add ROMs stays."""
+    from PySide6.QtWidgets import QLabel
+
+    from gamingcrypt.emulation.systems import SYSTEMS
+    from gamingcrypt.ui import theme
+
+    for system in SYSTEMS:
+        folder = emu.roms / system.folder
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / f"Game{system.extensions[0]}").write_text("x")
+    tab = games_tab(qtbot, emu, store)
+    try:
+        for size in theme.TEXT_SIZES:
+            theme.apply("dark", size=size)
+            tab.setStyleSheet(theme.STYLESHEET)
+            for system in SYSTEMS:
+                tab.open_system(system.id)
+                page = tab.currentWidget()
+                page.grab()
+                assert page.minimumSizeHint().width() <= 1280, (size, system.id)
+                assert page.title.width() >= page.title.sizeHint().width(), (size, system.name)
+                tab.back()
+    finally:
+        theme.apply("dark", size="normal")
+    tab.open_system("wiiu")
+    page = tab.currentWidget()
+    top = [w for w in (page.controls_button, page.shaders_button, page.upscaling_button, page.language_button)]
+    assert not any(w.isVisibleTo(page) for w in top) and page.options_button.isVisibleTo(page)
+    page.options_button.click()
+    texts = [label.text() for label in page.options_panel.findChildren(QLabel)]
+    assert any("language its games show their text in" in t for t in texts)
+    assert page.gamepad_back() and not page.options_popup.is_open()  # B: Options closes first
+
+
+def test_no_options_without_any(qtbot, emu):
+    """A console without any of them (Eden: the Switch has its own): no ⚙ Options at all."""
+    from gamingcrypt.emulation.systems import BY_ID
+
+    folder = emu.roms / BY_ID["switch"].folder
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"Game{BY_ID['switch'].extensions[0]}").write_text("x")
+    tab = games_tab(qtbot, emu)
+    tab.open_system("switch")
+    assert not tab.currentWidget().options_button.isVisibleTo(tab.currentWidget())
 
 
 def test_no_controls_button_without_a_store(qtbot, emu):

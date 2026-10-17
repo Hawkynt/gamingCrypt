@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import shiboken6
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QScrollArea, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea,
+                               QVBoxLayout, QWidget)
 
 from gamingcrypt.emulation.library import RomGame
 from gamingcrypt.emulation.systems import SHORT, System
@@ -226,32 +226,42 @@ class SystemPage(QWidget):
         layout.setContentsMargins(30, 16, 30, 10)
         top = QHBoxLayout()
         top.addWidget(tab.back_button())
-        title = QLabel(system.name)
-        title.setObjectName("title")
-        top.addWidget(title, 1)
-        self.controls_button = big_button("🕹  Controls")
-        self.controls_button.clicked.connect(lambda: tab.open_controls(system.id))
-        self.controls_button.setVisible(getattr(tab, "layout_store", None) is not None
-                                        and system.emulator == "retroarch")  # Eden has its own
-        top.addWidget(self.controls_button)
-        self.shaders_button = big_button("✨  Shaders")
-        self.shaders_button.clicked.connect(lambda: tab.open_shaders(system.id))
-        self.shaders_button.setVisible(system.emulator == "retroarch" and hasattr(tab, "open_shaders"))
-        top.addWidget(self.shaders_button)
-        self.upscaling_button = big_button("🔍  Upscaling")
-        self.upscaling_button.clicked.connect(lambda: tab.open_upscaling(system.id))
-        self.upscaling_button.setVisible(system.emulator == "retroarch" and hasattr(tab, "open_upscaling"))
-        top.addWidget(self.upscaling_button)
+        self.title = QLabel(system.name)
+        self.title.setObjectName("title")
+        top.addWidget(self.title, 1)
+        # The console's settings - set once, not each visit - behind ⚙ Options, as on a game's page:
+        # five buttons side by side left no room for the console's name (and pushed the page past
+        # the screen with larger text). Each with a line on what it does.
         from gamingcrypt.emulation import languages
 
-        self.language_button = big_button("🌐  Language")  # the console's: the games' text in it
-        self.language_button.clicked.connect(lambda: tab.open_language(system.id))
-        self.language_button.setVisible(languages.has_language(system) and hasattr(tab, "open_language"))
-        top.addWidget(self.language_button)
+        retroarch = system.emulator == "retroarch"  # (Eden has its own of all of them)
+        self.options_panel = QFrame()
+        rows = QVBoxLayout(self.options_panel)
+        rows.setSpacing(12)
+        self.controls_button = self._option(rows, "🕹  Controls", tab.open_controls if hasattr(tab, "open_controls")
+                                            else None, f"Which of your controller's buttons is which button of "
+                                                       f"the {system.name}", getattr(tab, "layout_store", None)
+                                            is not None and retroarch)
+        self.shaders_button = self._option(rows, "✨  Shaders", getattr(tab, "open_shaders", None),
+                                           "The look of all its games: an old TV, a handheld's screen, sharper …",
+                                           retroarch and hasattr(tab, "open_shaders"))
+        self.upscaling_button = self._option(rows, "🔍  Upscaling", getattr(tab, "open_upscaling", None),
+                                             "Sharper, smoother pictures for all its games",
+                                             retroarch and hasattr(tab, "open_upscaling"))
+        self.language_button = self._option(rows, "🌐  Language", getattr(tab, "open_language", None),
+                                            "The language its games show their text in",
+                                            languages.has_language(system) and hasattr(tab, "open_language"))
+        self.options_button = big_button("⚙ Options", checkable=True)
+        self.options_button.setVisible(any(b.property("offered") for b in self._options))
+        top.addWidget(self.options_button)
         self.add_button = big_button("⬆  Add ROMs")
         self.add_button.clicked.connect(tab.open_upload)
         top.addWidget(self.add_button)
         layout.addLayout(top)
+        from gamingcrypt.ui.options_popup import options_popup
+
+        self.options_popup = options_popup(self, self.options_panel, self.options_button, system.name)
+        self.options_button.toggled.connect(self.options_popup.set_open)
         self.bios_note = QLabel("")
         self.bios_note.setObjectName("status")
         self.bios_note.setWordWrap(True)
@@ -284,6 +294,35 @@ class SystemPage(QWidget):
             self.cards[game.appid] = card
             self.grid.addWidget(card)
         self.shown: list[int] = [g.appid for g in games]
+
+    def _option(self, rows: QVBoxLayout, text: str, opener, what: str, offered: bool) -> QPushButton:
+        """One of the console's settings in its Options: the button, what it does beside it.
+        Chosen: Options closes, its page opens."""
+        if not hasattr(self, "_options"):
+            self._options: list[QPushButton] = []
+        row = QWidget()
+        row.setObjectName("menuRow")
+        line = QHBoxLayout(row)
+        line.setContentsMargins(0, 0, 0, 0)
+        line.setSpacing(18)
+        button = big_button(text)
+        button.setMinimumWidth(220)
+        button.setProperty("offered", bool(offered))
+        if opener is not None:
+            button.clicked.connect(lambda: (self.options_popup.set_open(False), opener(self.system.id)))
+        line.addWidget(button)
+        label = QLabel(what)
+        label.setObjectName("detailMeta")
+        label.setWordWrap(True)
+        line.addWidget(label, 1)
+        row.setVisible(bool(offered))
+        button.setVisible(bool(offered))
+        rows.addWidget(row)
+        self._options.append(button)
+        return button
+
+    def gamepad_back(self) -> bool:
+        return self.options_popup.gamepad_back()  # (B: Options closes first)
 
     def set_games(self, games: list) -> None:
         """Games came or went while the page is open (copied over the network share …): the
@@ -529,6 +568,20 @@ class RomGamePage(QWidget):
         self.renderer_caption = row("Renderer", self.renderer_combo)
         self.renderer_combo.currentIndexChanged.connect(
             lambda _i: self.tab.profiles.set(appid, "renderer", self.renderer_combo.currentData()))
+
+        # the controller the game sees (Wii U: a Pro Controller - or the GamePad, for a game that
+        # needs its screen or touch); from the next start
+        pads = retroarch.GAME_PADS.get(self.game.system.id, {})
+        self.pad_combo = QComboBox()
+        self.pad_combo.addItem(retroarch.DEFAULT_PADS.get(self.game.system.id, ""), None)
+        for key, (_device, label) in pads.items():
+            self.pad_combo.addItem(label, key)
+        self.pad_combo.setCurrentIndex(max(self.pad_combo.findData(profile.get("pad")), 0))
+        self.pad_caption = row("Controller", self.pad_combo)
+        self.pad_combo.setVisible(bool(pads))
+        self.pad_caption.setVisible(bool(pads))
+        self.pad_combo.currentIndexChanged.connect(
+            lambda _i: self.tab.profiles.set(appid, "pad", self.pad_combo.currentData()))
 
         # Upscaling: a classic pixel-art algorithm - on the whole picture (2D consoles) or the textures
         # (3D consoles, when the core has it); Resolution: its factor (2D) or the internal one (3D)

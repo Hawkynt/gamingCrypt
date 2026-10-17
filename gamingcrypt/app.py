@@ -1101,7 +1101,8 @@ class MainWindow(QMainWindow):
                                        resolution=resolution,
                                        shaders=shader_choice.for_game(self.config, profile, game.system.id),
                                        scaler=scaler, in_step=bool(profile.get("in_step")),
-                                       language=languages.for_system(self.config, game.system))
+                                       language=languages.for_system(self.config, game.system),
+                                       pad=profile.get("pad"))
         if ok:
             self.follow_game_refresh(config_mod.cache_dir() / "logs" / retroarch.LOG_NAME)
             self.speed_mode, self.speed = "normal", 1.0  # RetroArch starts at normal speed

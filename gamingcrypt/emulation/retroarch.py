@@ -214,6 +214,11 @@ RENDERER_VIDEO = {"accurate": "vulkan"}
 # always: Cemu draws with Vulkan (RetroArch's Vulkan driver, see systems) - its OpenGL path is
 # black under gamescope
 FIXED_OPTIONS = {"cemu": {"cemu_gpu_api": "Vulkan"}}
+# a game's own controller (its Options) instead of its system's - RetroArch's device for player 1:
+# Wii U games are played with a Pro Controller (systems.py); the GamePad (RETRO_DEVICE_JOYPAD) for
+# one that needs its screen or touch
+GAME_PADS = {"wiiu": {"gamepad": ("1", "Wii U GamePad - for games that need its screen or touch")}}
+DEFAULT_PADS = {"wiiu": "Wii U Pro Controller"}
 ALWAYS_OPTIONS = {"pcsx2"}  # the renderer has to match the video driver: always written
 
 
@@ -337,7 +342,7 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
            widescreen: str | None = None, input_lag: str | None = None,
            renderer: str | None = None, resolution: str | None = None,
            shaders: list[str] | None = None, shader_dirs=None, scaler: str | None = None,
-           in_step: bool = False, language: str | None = None) -> tuple[bool, str]:
+           in_step: bool = False, language: str | None = None, pad: str | None = None) -> tuple[bool, str]:
     if not available(which):
         return False, "RetroArch isn't installed - run ./install.sh"
     core = find_core(paths, game.system, core_name)
@@ -348,6 +353,8 @@ def launch(game: RomGame, paths: EmulationPaths, data_dir: Path, log_dir: Path, 
     extra = {**speed_settings(fast, slow), **lag_settings(game.system.id, input_lag), **dict(game.system.extra)}
     if in_step:  # a 50 Hz game at the screen's 60
         extra.update(IN_STEP_WITH_SCREEN)
+    if pad in GAME_PADS.get(game.system.id, {}):  # the game's own controller (e.g. the Wii U GamePad)
+        extra["input_libretro_device_p1"] = GAME_PADS[game.system.id][pad][0]
     short = core.name.removesuffix(".so").removesuffix("_libretro")
     video = RENDERER_VIDEO.get(renderer or "") if short in RENDERERS else None
     if video or game.system.video:

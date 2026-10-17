@@ -64,6 +64,24 @@ def test_wii_has_a_wii_remote_with_nunchuk_and_gamecube_a_pad(paths, tmp_path):
     assert "input_libretro_device_p1" not in config
 
 
+def test_wii_u_is_played_with_a_pro_controller(paths, tmp_path):
+    """Player 1 is a Wii U Pro Controller (the Cemu core's RETRO_DEVICE_PRO: RetroArch's 513), as
+    some games want one - a game that needs the GamePad's screen gets the GamePad back (its Options)."""
+    (paths.cores / "cemu_libretro.so").write_text("x")
+    _game, config = launch(paths, tmp_path, "wiiu", "Mario Kart 8.wua")
+    assert 'input_libretro_device_p1 = "513"' in config
+    assert ((1 + 1) << 8) | 1 == 513  # RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_JOYPAD, 1), as the core defines it
+    game = next(g for g in scan(paths, BY_ID["wiiu"]) if g.path.name == "Mario Kart 8.wua")
+    retroarch.launch(game, paths, tmp_path / "d", tmp_path / "l", popen=lambda cmd, **k: None,
+                     which=lambda n: "/usr/bin/retroarch", pad="gamepad")
+    assert 'input_libretro_device_p1 = "1"' in (paths.config / "gamingcrypt.cfg").read_text()
+    _game, config = launch(paths, tmp_path, "wiiu", "Mario Kart 8.wua")  # the next one: the Pro again
+    assert 'input_libretro_device_p1 = "513"' in config
+    from gamingcrypt.emulation import layouts
+
+    assert "Home" not in layouts.console("wiiu")  # not the game's: Guide / Windows stay the quick menu
+
+
 def test_3ds_on_glcore(paths, tmp_path):
     (paths.cores / "azahar_libretro.so").write_text("x")
     _game, config = launch(paths, tmp_path, "3ds", "Mario Kart 7.3ds")

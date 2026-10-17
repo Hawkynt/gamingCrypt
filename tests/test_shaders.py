@@ -216,6 +216,7 @@ def test_system_page_sets_the_systems_shaders(qtbot, tab):
 
     tab.open_system("snes")
     system_page = tab.currentWidget()
+    system_page.options_button.click()  # (the console's settings are in its Options)
     assert system_page.shaders_button.isVisible() and "Shaders" in system_page.shaders_button.text()
     system_page.shaders_button.click()
     page = tab.currentWidget()
