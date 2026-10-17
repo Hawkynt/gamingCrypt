@@ -67,7 +67,10 @@ touch and controller, and can boot the device straight into a SteamOS-like gamin
   loaded when you pick a slot - RetroArch never saves, loads or deletes one by itself.
 - ⏸ **Paused** while the quick menu is open over an emulated game.
 - ⏩ **Speed**: a slider in the quick menu, from 0.1x to 10x - the game goes on at it when you
-  close the menu.
+  close the menu. RetroArch can't change it while a game runs, so the game starts again where you
+  were (kept in a hidden state of its own, not one of the nine, gone again after two minutes); the
+  menu says so before you close it. Should the game not come back, that state is put into a free
+  slot and you're told which.
 - 🇪🇺 **50 Hz games**: tick "60 FPS" in the quick menu and a PAL game runs in step with a 60 Hz
   screen (a fifth faster) instead of stuttering.
 - ❓ **Not recognised?** A file with an unusual name (patched, translated, renamed) gets no cover,

@@ -210,8 +210,8 @@ class QuickMenu(QWidget):
         self.speed = _slider(0, len(SPEEDS) - 1, SPEEDS.index(1.0))
         self.speed.setPageStep(1)
         # chosen here, applied once the menu is closed (the game is paused meanwhile)
-        _on_change(self.speed, lambda v: self.speed_chosen.emit(SPEEDS[v]),
-                   lambda v: self.speed_value.setText(f"{SPEEDS[v]:g}x"))
+        _on_change(self.speed, self._speed_chosen, lambda v: self.speed_value.setText(f"{SPEEDS[v]:g}x"))
+        self.running_speed, self.running_in_step, self.with_states = 1.0, False, True  # (the game as it runs)
         self.speed_row = self._row("Speed", self.speed, self.speed_value)
         self.speed_row.hide()
         discs = QWidget()
@@ -341,8 +341,10 @@ class QuickMenu(QWidget):
         self.state_row.setVisible(emulated and states)
         self.controls_row.setVisible(emulated)
         self.speed_row.setVisible(emulated and speed is not None)
+        self.with_states = states
         if speed is not None:
             self.show_speed(speed)
+            self.running_speed = speed
 
     def set_in_step(self, offered: bool, on: bool = False) -> None:
         """A 50 Hz game: the box to run it at the screen's 60 FPS - not offered for other games."""
@@ -351,6 +353,7 @@ class QuickMenu(QWidget):
         self.in_step_button.blockSignals(False)
         self._in_step_text()
         self.in_step_button.setVisible(offered)
+        self.running_in_step = on
 
     def _in_step_text(self) -> None:
         self.in_step_button.setText(("☑" if self.in_step_button.isChecked() else "☐") + "  60 FPS (50 Hz game)")
@@ -358,6 +361,34 @@ class QuickMenu(QWidget):
     def _in_step_toggled(self, on: bool) -> None:
         self._in_step_text()
         self.in_step_chosen.emit(on)  # applied once the menu is closed
+        self._restart_note()
+
+    def _speed_chosen(self, index: int) -> None:
+        from gamingcrypt.emulation.retroarch import SPEEDS
+
+        self.speed_chosen.emit(SPEEDS[index])  # applied once the menu is closed
+        self._restart_note()
+
+    RESTART_NOTE = "When you go back, the game starts again at {what} - where you are is kept"
+    NEXT_START_NOTE = "{what} from the next start - this game can't be saved while it runs"
+
+    def _restart_note(self) -> None:
+        """A new speed (or 60 FPS) is applied by starting the game again, after the menu is closed:
+        said here, while it can still be read - the game going black and back is no surprise."""
+        from gamingcrypt.emulation.retroarch import SPEEDS
+
+        speed = SPEEDS[self.speed.value()]
+        in_step = self.in_step_button.isChecked() if self.in_step_button.isVisibleTo(self) else self.running_in_step
+        changes = []
+        if speed != self.running_speed:
+            changes.append(f"{speed:g}x")
+        if in_step != self.running_in_step:
+            changes.append("60 FPS" if in_step else "50 FPS")
+        if not changes:
+            set_status(self.status, "")
+            return
+        what = " and ".join(changes)
+        set_status(self.status, (self.RESTART_NOTE if self.with_states else self.NEXT_START_NOTE).format(what=what))
 
     def show_speed(self, speed: float) -> None:
         """The speed the game runs at - nothing is applied."""
