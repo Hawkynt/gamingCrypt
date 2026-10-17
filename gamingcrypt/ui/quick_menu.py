@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (QBoxLayout, QComboBox, QFrame, QHBoxLayout, QLabe
 from gamingcrypt.system import gamescope_ctl
 from gamingcrypt.system.battery import read_battery
 from gamingcrypt.system.controls import SystemControls
+from gamingcrypt.ui.combo import ComboBox
 from gamingcrypt.ui.system_settings import _label, _on_change, _slider
 from gamingcrypt.ui.tasks import run_async
 from gamingcrypt.ui.widgets import big_button, set_status
@@ -25,7 +26,7 @@ KEEP_SECONDS = 15
 def _combo() -> QComboBox:
     """Long device names ("Family 17h/19h HD Audio Controller Speaker …") must not
     widen the panel past the screen - they get elided, the open list shows them whole."""
-    combo = QComboBox()
+    combo = ComboBox()
     combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
     combo.setMinimumContentsLength(8)
     return combo
