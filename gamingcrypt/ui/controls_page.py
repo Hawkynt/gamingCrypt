@@ -132,6 +132,7 @@ class ControlsPage(QWidget):
     def __init__(self, store: layouts.Store, system_id: str | None = None, systems: list[str] | None = None,
                  note: str = "", parent: QWidget | None = None):
         super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)  # a whole screen: the hexagons (theme.py)
         self.store = store
         self.scanning: str | None = None  # console button waiting for a press
         self._swallow: int | None = None  # the release of the button just pressed

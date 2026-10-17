@@ -390,6 +390,40 @@ def test_everything_fits_without_scrolling(menu):
         assert viewport.contains(r), button
 
 
+@pytest.mark.parametrize("size", ["normal", "large", "larger"])
+def test_nothing_is_cut_off_at_the_right_with_every_text_size(menu, size):
+    """Real sizes (the theme), a running emulated game with every button: nothing past the panel's
+    right edge, no caption cut short - and room left of the panel to tap the menu shut."""
+    from PySide6.QtWidgets import QLabel, QWidget
+
+    from gamingcrypt.ui import theme
+
+    m, *_ = menu
+
+    class Limit:
+        min_w, max_w, watts = 5, 28, 15
+
+    try:
+        theme.apply("dark", size=size)
+        m._test_host.setStyleSheet(theme.STYLESHEET)
+        m.set_performance(limit=Limit(), watts=15, fps=0, overlay=False, in_game=True)
+        m.set_emulated(True, 1.0)
+        m.set_in_step(True)
+        m.set_discs(3, 0)
+        m.open_menu(0x70000001, "The Legend of Zelda: Ocarina of Time")
+        m._test_host.grab()
+        viewport = m.panel.viewport().rect()
+        for widget in m.panel.widget().findChildren(QWidget):
+            if widget.isVisibleTo(m) and not isinstance(widget, QLabel):
+                r = widget.rect().translated(widget.mapTo(m.panel.viewport(), widget.rect().topLeft()))
+                assert r.right() <= viewport.right(), (size, widget, getattr(widget, "text", str)())
+        for caption in m.captions:
+            assert caption.width() >= caption.sizeHint().width(), (size, caption.text())
+        assert m.panel.geometry().left() >= qm.TAP_ROOM
+    finally:
+        theme.apply("dark", size="normal")
+
+
 def test_opens_at_the_top(qtbot, menu):
     m, *_ = menu
     m.open_menu(620, "Portal 2")

@@ -49,6 +49,8 @@ PALETTES = {
         "SUCCESS": "#3ddc84",
         "ON_SUCCESS": "#03140b",
         "SCRIM": "rgba(4, 5, 8, 200)",
+        "PATTERN": "#9fb4d0",  # the background's hexagons ...
+        "PATTERN_ALPHA": "0.16",  # ... this strong at their strongest
     },
     "light": {
         "BG": "#e8ebf0",
@@ -69,6 +71,8 @@ PALETTES = {
         "SUCCESS": "#14864a",
         "ON_SUCCESS": "#ffffff",
         "SCRIM": "rgba(16, 20, 30, 130)",
+        "PATTERN": "#3d5578",
+        "PATTERN_ALPHA": "0.22",
     },
 }
 
@@ -81,6 +85,7 @@ GLOW = 6  # ... and its cut edges
 current = DEFAULT
 BG = SURFACE = SURFACE_HI = SURFACE_HOVER = BORDER = CARD_EDGE = TEXT = TEXT_DIM = ""
 ACCENT = ACCENT_HI = ACCENT_SOFT = ON_ACCENT = FOCUS = DANGER = DANGER_HI = SUCCESS = ON_SUCCESS = SCRIM = ""
+PATTERN = PATTERN_ALPHA = ""
 STYLESHEET = ""
 _listeners: list[Callable[[], None]] = []
 _fonts_loaded = False
@@ -185,6 +190,45 @@ def _handle(fill: str, stroke: str | None = None) -> str:
     return _svg_file("knob", svg)
 
 
+HEX_RADIUS = 30  # px, centre to corner
+HEX_GAP = 2.5  # between neighbours: tiles, not a net
+HEX_FIELD = (1400, 1000)  # the picture, anchored at the screen's bottom right
+HEX_REACH = 1150  # px from that corner, where the last cells fade out
+
+
+def hex_field(line: str, alpha: float, accent: str) -> str:
+    """The background: flat-topped hexagons in the bottom right corner, fading out towards the
+    top left (where the tabs and headers are), a few of them lit in the accent colour. Every
+    cell its own opacity (Qt's SVG has no masks); the same picture every time (no randomness)."""
+    w, h = HEX_FIELD
+    r, step_x, step_y = HEX_RADIUS, 1.5 * HEX_RADIUS, math.sqrt(3) * HEX_RADIUS
+    inner = r - HEX_GAP
+    corners = [(inner * math.cos(math.radians(a)), inner * math.sin(math.radians(a))) for a in range(0, 360, 60)]
+    cells = []
+    for col in range(int(w / step_x) + 2):
+        for row in range(int(h / step_y) + 2):
+            cx = w - col * step_x  # counted from the corner: it sits the same on every screen
+            cy = h - row * step_y - (step_y / 2 if col % 2 else 0)
+            # an ellipse: along the bottom further than up (the tabs and headers stay calm)
+            t = 1 - math.hypot((w - cx) * 0.85, (h - cy) * 1.35) / HEX_REACH
+            if t <= 0:
+                continue
+            noise = int(hashlib.md5(f"{col},{row}".encode()).hexdigest()[:8], 16) / 0xFFFFFFFF
+            if noise > 0.3 + 1.4 * t:  # thinning out at the edge, not a hard circle
+                continue
+            points = " ".join(f"{cx + dx:.1f},{cy + dy:.1f}" for dx, dy in corners)
+            strength = alpha * t ** 1.6
+            if t > 0.5 and noise < 0.06:  # lit, near the corner only
+                cells.append(f'<polygon points="{points}" fill="{accent}" fill-opacity="{0.03 + 0.07 * t:.3f}" '
+                             f'stroke="{accent}" stroke-opacity="{0.15 + 0.3 * t:.3f}" stroke-width="1.5"/>')
+            else:
+                cells.append(f'<polygon points="{points}" fill="none" stroke="{line}" '
+                             f'stroke-opacity="{strength:.3f}" stroke-width="1.25"/>')
+    svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">'
+           + "".join(cells) + "</svg>")
+    return _svg_file("hexes", svg)
+
+
 def load_fonts() -> None:
     """The display face (needs a running QGuiApplication; without one nothing happens)."""
     global _fonts_loaded
@@ -220,12 +264,14 @@ def stylesheet(c: dict) -> str:
         s = SLICE[kind]
         return f"padding: {vertical - s}px {horizontal - s}px;"
 
+    hexes = hex_field(c["PATTERN"], float(c["PATTERN_ALPHA"]), c["ACCENT"])
     return f"""
 QWidget {{
-    background: {c['BG']};
+    background: transparent;  /* the hexagons show through: only whole screens paint (below) */
     color: {c['TEXT']};
     font-size: 20px;
 }}
+QWidget[cover="true"] {{ background: {c['BG']}; }}  /* hides what scrolls beneath it */
 QLabel {{ background: transparent; }}
 QLabel#title {{ font-size: 34px; font-weight: 700; {display}; }}
 QLabel#subtitle {{ font-size: 20px; color: {c['TEXT_DIM']}; }}
@@ -345,8 +391,13 @@ QLabel#healthOk {{ color: {c['SUCCESS']}; font-size: 24px; font-weight: 700; }}
 QLabel#healthBad {{ color: {c['DANGER']}; font-size: 24px; font-weight: 700; }}
 QLabel#healthOptional {{ color: {c['TEXT_DIM']}; font-size: 24px; font-weight: 700; }}
 
-/* full-screen layers */
-LaunchOverlay, LockScreen, ControlsPage {{ background: {c['BG']}; }}
+/* whole screens: the colour and the hexagons (everything on them is transparent) */
+MainWindow, LaunchOverlay, LockScreen, AuthSetupWizard, ControlsPage, BluetoothPage, SaveStatesPage {{
+    background-color: {c['BG']};
+    background-image: url({hexes});
+    background-repeat: no-repeat;
+    background-position: bottom right;
+}}
 QuickMenu, PowerMenu, BatteryWarning, DisplayConfirm, _Overlay {{ background: {c['SCRIM']}; }}
 
 QScrollArea {{ border: none; background: transparent; }}

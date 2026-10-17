@@ -8,8 +8,8 @@ from __future__ import annotations
 from typing import Callable
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLabel, QScrollArea, QSizePolicy, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (QBoxLayout, QComboBox, QFrame, QHBoxLayout, QLabel, QScrollArea, QSizePolicy,
+                               QVBoxLayout, QWidget)
 
 from gamingcrypt.system import gamescope_ctl
 from gamingcrypt.system.battery import read_battery
@@ -31,7 +31,9 @@ def _combo() -> QComboBox:
     return combo
 
 
-PANEL_WIDTH = 940
+PANEL_WIDTH = 940  # wider when the text is larger (QuickMenu.fit)
+TAP_ROOM = 120  # left of the panel, always: a tap there closes the menu
+CAPTION_WIDTH = 130  # at least - the longest caption sets it for all rows
 
 
 class QuickMenu(QWidget):
@@ -59,6 +61,7 @@ class QuickMenu(QWidget):
         self.appid: int | None = None
         self.previous_refresh = 0
         self.remaining = 0
+        self.captions: list[QLabel] = []
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
 
         outer = QHBoxLayout(self)
@@ -95,6 +98,7 @@ class QuickMenu(QWidget):
         # battery, refreshed every second while the menu is open
         self.battery = QLabel()
         self.battery.setObjectName("battery")  # green when plugged in, red when low (theme.py)
+        self.battery.setWordWrap(True)  # "… to full · Charging" must not widen the column
         self.battery_row = self._row("Battery", self.battery, None)
         self.battery_timer = QTimer(self)
         self.battery_timer.timeout.connect(self.update_battery)
@@ -168,6 +172,7 @@ class QuickMenu(QWidget):
         line.addWidget(self.screenshot_button, 1)
         self.box.addWidget(row)
         self.tools_row = row
+        self.pair_rows = [row]  # below each other where they don't fit next to each other (fit)
 
         # emulated game: save / load state
         row = QWidget()
@@ -184,6 +189,7 @@ class QuickMenu(QWidget):
         line.addWidget(self.load_state_button, 1)
         self.box.addWidget(row)
         self.state_row = row
+        self.pair_rows.append(row)
         row.hide()
         row = QWidget()  # its own line: three buttons don't fit next to each other
         row.setObjectName("menuRow")
@@ -196,6 +202,7 @@ class QuickMenu(QWidget):
         line.addWidget(self.in_step_button, 1)
         self.box.addWidget(row)
         self.controls_row = row
+        self.pair_rows.append(row)
         row.hide()
         from gamingcrypt.emulation.retroarch import SPEEDS
 
@@ -292,7 +299,8 @@ class QuickMenu(QWidget):
         line = QHBoxLayout(row)
         line.setContentsMargins(0, 0, 0, 0)
         cap = QLabel(caption)
-        cap.setFixedWidth(130)
+        cap.setFixedWidth(CAPTION_WIDTH)
+        self.captions.append(cap)
         line.addWidget(cap)
         line.addWidget(widget, 1)
         if value is not None:
@@ -426,11 +434,30 @@ class QuickMenu(QWidget):
         self.update_battery()
         self.battery_timer.start(1000)
         self.setGeometry(self.parentWidget().rect())
-        self.panel.setFixedWidth(min(PANEL_WIDTH, self.width() - 200))  # room to tap next to it
+        self.fit()
         self.panel.verticalScrollBar().setValue(0)  # always from the top
         self.raise_()
         self.show()
         self.back_button.setFocus()
+
+    def fit(self) -> None:
+        """Everything inside the panel, with every text size (nothing cut off at the right):
+        the captions as wide as the longest one, the panel as wide as what's in it (up to the
+        screen, less the room to tap next to it) - and the button pairs below each other if
+        that still isn't enough."""
+        width = max([CAPTION_WIDTH] + [cap.sizeHint().width() for cap in self.captions])
+        for cap in self.captions:
+            cap.setFixedWidth(width)
+        room = self.width() - TAP_ROOM
+        card = self.panel.widget()
+        edges = 2 * self.panel.frameWidth() + self.panel.verticalScrollBar().sizeHint().width()
+        for direction in (QBoxLayout.Direction.LeftToRight, QBoxLayout.Direction.TopToBottom):
+            for row in self.pair_rows:
+                row.layout().setDirection(direction)
+            need = card.minimumSizeHint().width() + edges
+            if need <= room:
+                break
+        self.panel.setFixedWidth(max(min(max(PANEL_WIDTH, need), room), 0))
 
     def close_menu(self) -> None:
         if self.countdown.isActive():

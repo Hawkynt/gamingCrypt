@@ -494,6 +494,7 @@ class SlidingHeader(QObject):
         self.clip = QWidget(scroll_area.parentWidget())
         header.setParent(self.clip)
         header.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)  # hides what's beneath
+        header.setProperty("cover", True)  # (theme.py: the background colour - not see-through)
         self.offset = 0  # how far it's slid up (0: all there)
         self.last = self.bar.value()
         self.going_up = False  # the last scroll direction decides how a partly shown header snaps

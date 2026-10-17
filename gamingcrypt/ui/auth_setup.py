@@ -96,6 +96,7 @@ class AuthSetupWizard(QWidget):
         parent: QWidget | None = None,
     ):
         super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)  # a whole screen: the hexagons (theme.py)
         self.config = config
         self.save = save
         self.unlocker_factory = unlocker_factory
