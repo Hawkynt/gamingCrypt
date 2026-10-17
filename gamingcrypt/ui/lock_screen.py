@@ -24,6 +24,7 @@ class LockScreen(QWidget):
         """users: who can log in (users.User), shown to choose from when there's more than one;
         unlocker_for(user) -> their unlocker. user_id: who is chosen at first."""
         super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)  # a whole screen: the hexagons (theme.py)
         self.unlocker = unlocker
         self.busy = False
         self.users = list(users or [])
