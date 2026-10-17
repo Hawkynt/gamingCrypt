@@ -423,3 +423,16 @@ mp.observe_property("osd-dimensions", "native", function()
     if state.shown then draw() end
 end)
 mp.register_script_message("gamingcrypt-show-controls", show)
+
+-- Ran to the end (not stopped with B or ✕, not force-quit): a file next to the IPC socket tells
+-- GamingCrypt - only then the next episode starts (player.py: played_to_the_end).
+mp.register_event("end-file", function(event)
+    if event.reason ~= "eof" then return end
+    local sock = mp.get_property("input-ipc-server", "")
+    if sock == "" then return end
+    local mark = io.open(sock .. ".ended", "w")
+    if mark then
+        mark:write("eof\n")
+        mark:close()
+    end
+end)

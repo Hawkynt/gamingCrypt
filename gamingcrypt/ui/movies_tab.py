@@ -669,14 +669,16 @@ class Playback(QObject):
 
     changed = Signal(object)  # the movie, after it ended
     played_to_the_end = Signal(object)  # ... and it ran to its end (not stopped): next episode
-    END_S = 20  # this close to the end when the player went away: it ran out
 
-    def __init__(self, parent: QObject | None = None, position=None, socket_path=None):
+    def __init__(self, parent: QObject | None = None, position=None, socket_path=None, ended=None):
         super().__init__(parent)
         from gamingcrypt.movies import player
 
         self.position = position or player.position
         self.socket_path = socket_path or player.socket_path
+        # (sock) -> did the player run to the end? Said by mpv itself - stopped in the last
+        # seconds is still stopped (where it was is only asked every few seconds)
+        self.ended = ended or player.played_to_the_end
         self.movie: Movie | None = None
         self.session: object | None = None
         self.lock = threading.Lock()
@@ -715,8 +717,7 @@ class Playback(QObject):
             return
         self.timer.stop()
         self.movie = self.session = None
-        where = self.last_where
-        at_end = where is not None and where[1] > 0 and where[0] >= where[1] - self.END_S
+        at_end = self.ended(self.socket_path())
 
         def work():
             with self.lock:
