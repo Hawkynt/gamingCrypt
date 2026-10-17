@@ -30,6 +30,7 @@ def test_system_page(qtbot, tab):  # noqa: F811
     tab.shader_config = (config, lambda c: saved.append(copy.deepcopy(c)))
     tab.open_system("snes")
     system_page = tab.currentWidget()
+    system_page.options_button.click()  # (the console's settings are in its Options)
     assert system_page.upscaling_button.isVisibleTo(system_page)
     system_page.upscaling_button.click()
     page = tab.currentWidget()
