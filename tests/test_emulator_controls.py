@@ -53,6 +53,40 @@ def test_every_console_button_is_in_its_picture():
         assert set(buttons) <= set(console_pictures.picture(sid).buttons), sid
 
 
+def test_the_wii_picture_is_the_remote_and_the_nunchuk():
+    """As held: the Wii Remote upright, the Nunchuk on its cable. Every button on its controller
+    (shaking aside), none of them - or the caption under it - on another."""
+    from PySide6.QtCore import QRectF
+
+    from gamingcrypt.ui import console_pictures as cp
+
+    pic = cp.picture("wii")
+    body = cp._body(pic.body)
+    rects = {}
+    for name, (x, y, kind) in pic.buttons.items():
+        w, h = cp.SIZES[kind]
+        rects[name] = QRectF(x - w / 2, y - h / 2, w, h)
+    for name, rect in rects.items():
+        if name in ("C", "Z"):  # on the Nunchuk's front edge, as the shoulder buttons elsewhere
+            assert body.intersects(rect) and not body.contains(rect), name
+        elif not name.startswith("Shake"):
+            assert body.contains(rect.center()), name
+        assert QRectF(0, 0, cp.W, cp.H).contains(rect), name
+    caption = 22  # (what the button is on the player's controller, under it)
+    names = list(rects)
+    dpad = set(cp.dpad_buttons(pic))  # (their captions sit in the cross's middle, as everywhere)
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            if a in dpad and b in dpad:
+                continue
+            assert not rects[a].adjusted(0, 0, 0, caption).intersects(rects[b]), (a, b)
+            assert not rects[b].adjusted(0, 0, 0, caption).intersects(rects[a]), (a, b)
+    remote, nunchuk = pic.buttons["A"], pic.buttons["C"]
+    assert pic.dpad[1] < remote[1] < pic.buttons["1"][1] < pic.buttons["2"][1]  # top to bottom, as held
+    assert nunchuk[0] < remote[0] and any(d[0] == "cable" for d in pic.decor)
+    assert cp.button_text("Home") == "⌂"
+
+
 def test_select_then_press_assigns(qtbot, store):
     from gamingcrypt.input import evdev as e
     from gamingcrypt.ui.controls_page import ControlsPage
