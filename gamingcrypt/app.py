@@ -1705,7 +1705,7 @@ class MainWindow(QMainWindow):
         if not mode.in_gaming_session() or not mode.display_pending():
             return
         self.display_confirm = DisplayConfirm(self)
-        self.display_confirm.kept.connect(mode.confirm_display)
+        self.display_confirm.kept.connect(self.keep_display)
         self.display_confirm.reverted.connect(self._revert_display)
         args = mode.parse_display(mode.read_args())
         render = f"{args['width']}×{args['height']}" if "width" in args else "native"
@@ -1713,6 +1713,18 @@ class MainWindow(QMainWindow):
         actual = mode.actual_mode()
         self.display_confirm.ask(f"Resolution {render}, refresh rate {refresh}"
                                  + (f" (screen: {actual})" if actual else ""))
+
+    def keep_display(self) -> None:
+        """Kept: from now on the resolution of whoever is logged in (set again at their login).
+        Only now - one that was reverted (here, or by the session when gamescope couldn't start
+        with it) used to come back at the next login."""
+        from gamingcrypt.session import mode
+
+        mode.confirm_display()
+        native = mode.panel_size() or (1280, 800)
+        current = mode.parse_display(mode.read_args())
+        self.config["system"]["gaming_resolution"] = f"{current.get('width', native[0])}x{current.get('height', native[1])}"
+        self.save(self.config)
 
     def _revert_display(self) -> None:
         from gamingcrypt.session import mode
