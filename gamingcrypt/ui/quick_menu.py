@@ -513,9 +513,13 @@ class QuickMenu(QWidget):
         self.show()
         self.back_button.setFocus()
 
-    def set_lock_shortcut(self, binding) -> None:
-        """The device buttons that lock (hotkeys.Binding) - set in Settings, they differ per device."""
-        self.lock_hint.setText(f"Lock shortcut: {binding.how_to()}")
+    def set_lock_shortcut(self, binding, controller=None) -> None:
+        """The device buttons that lock (hotkeys.Binding) - set in Settings, they differ per device -
+        and a connected controller's, where they're others."""
+        text = f"Lock shortcut: {binding.how_to()}"
+        if controller is not None and controller != binding:
+            text += f" - on a controller: {controller.how_to()}"
+        self.lock_hint.setText(text)
 
     def fit(self) -> None:
         """Everything inside the panel, with every text size (nothing cut off at the right):
