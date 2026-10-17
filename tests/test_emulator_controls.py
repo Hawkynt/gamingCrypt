@@ -80,7 +80,15 @@ def test_select_then_press_assigns(qtbot, store):
     assert page.gamepad_back() and page.scanning == "Square"  # B is scanned, not back
     page.cancel_button.click()
     assert page.scanning is None
+    from gamingcrypt.ui.modal import open_modal
+
+    page.reset_button.click()  # asks first
+    modal = open_modal(page)
+    assert "default layout for" in modal.content.question.text() and store.get("psx") != {}
+    modal.content.cancel_button.click()  # changed its mind: nothing happens
+    assert store.get("psx") != {} and open_modal(page) is None
     page.reset_button.click()
+    open_modal(page).content.action_button.click()
     assert store.get("psx") == {}
     page.system_combo.setCurrentIndex(0)
     assert "B" in page.buttons and page.picture.captions["B"].text() == "A"

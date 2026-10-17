@@ -140,7 +140,7 @@ class WifiSection(QFrame):
             line.addWidget(button, 1)
             if network.saved:
                 forget = big_button("Forget")
-                forget.clicked.connect(lambda _c=False, n=network: self.forget(n))
+                forget.clicked.connect(lambda _c=False, n=network: self.ask_forget(n))
                 line.addWidget(forget)
             self.list.addWidget(row)
             self.rows[network.ssid] = row
@@ -163,6 +163,12 @@ class WifiSection(QFrame):
         set_status(self.status, f"Connecting to {network.ssid}…")
         run_async(lambda: self.wifi.connect(network), lambda r: self._after_action(r, refresh=True),
                   lambda exc: self._failed(str(exc)), owner=self)
+
+    def ask_forget(self, network: Network) -> None:
+        from gamingcrypt.ui.modal import ask
+
+        ask(self.window(), f"Forget {network.ssid}?\nIts password is deleted - to join it again you type it in "
+                           "anew.", "Forget", lambda: self.forget(network))
 
     def forget(self, network: Network) -> None:
         run_async(lambda: self.wifi.forget(network.ssid), lambda r: self._after_action(r, refresh=True),

@@ -175,7 +175,7 @@ class ControllerPage(QWidget):
             buttons.body.addLayout(line)
             self.rows[name] = (current, button)
         reset = big_button("Reset to defaults")
-        reset.clicked.connect(self.reset)
+        reset.clicked.connect(self.ask_reset)
         buttons.body.addWidget(reset, alignment=Qt.AlignmentFlag.AlignLeft)
         buttons.body.addWidget(buttons.status)
         self.buttons = buttons
@@ -333,11 +333,19 @@ class ControllerPage(QWidget):
         self.refresh_rows()
         set_status(self.buttons.status, f"{dict((b[0], b[1]) for b in BUTTONS)[name]} → {source.describe()}")
 
+    RESET_QUESTION = ("Reset this controller to its defaults?\nIts button mapping, stick calibration and "
+                      "dead zone go back to how they came.")
+
+    def ask_reset(self) -> None:
+        from gamingcrypt.ui.modal import ask
+
+        ask(self.window(), self.RESET_QUESTION, "Reset", self.reset)
+
     def reset(self) -> None:
         self.profile = self.service.reset_profile(self.info)
         self.translator = Translator(self.profile, self.absinfo) if self.absinfo else None
         self.refresh_rows()
-        set_status(self.buttons.status, "Mapping and calibration reset")
+        set_status(self.buttons.status, "Mapping, calibration and dead zone reset")
 
     # calibration ---------------------------------------------------------------------
     def _set_calibration_ui(self, active: bool) -> None:

@@ -102,7 +102,13 @@ def test_network_list(qtbot, tab):
     assert section.toggle.isChecked() and section.toggle.text() == "On"
     home = section.rows["Home:5G"].findChildren(type(section.toggle))
     assert "Connected" in home[0].text() and home[1].text() == "Forget"
-    home[1].click()  # forget
+    from gamingcrypt.ui.modal import open_modal
+
+    home[1].click()  # forget: asks first - its password is gone afterwards
+    modal = open_modal(tab.window())
+    assert "Forget Home:5G?" in modal.content.question.text()
+    assert not any("delete" in call for call in section.wifi.runner.calls)
+    modal.content.action_button.click()
     qtbot.waitUntil(lambda: ["nmcli", "connection", "delete", "id", "Home:5G"] in section.wifi.runner.calls)
     qtbot.waitUntil(lambda: "Forgot Home:5G" in section.status.text())
 

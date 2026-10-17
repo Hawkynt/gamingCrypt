@@ -219,7 +219,7 @@ class ControllerTestPage(QWidget):
         self.edit_button.hide()
         top.addWidget(self.edit_button)
         self.reset_button = big_button("Default layout")
-        self.reset_button.clicked.connect(self.reset_layout)
+        self.reset_button.clicked.connect(self.ask_reset_layout)
         self.reset_button.hide()
         top.addWidget(self.reset_button)
         self.done_button = big_button("Done", "primary")
@@ -287,6 +287,12 @@ class ControllerTestPage(QWidget):
         self.store.set(self.system, self.picked, name)
         self.cancel_edit()
         self.refresh_labels()
+
+    def ask_reset_layout(self) -> None:
+        from gamingcrypt.ui.modal import ask
+
+        ask(self.window(), f"Back to the default layout for {self.system_combo.currentText()}?\nEvery button "
+                           "you changed for it is undone.", "Default layout", self.reset_layout)
 
     def reset_layout(self) -> None:
         self.store.reset(self.system)
