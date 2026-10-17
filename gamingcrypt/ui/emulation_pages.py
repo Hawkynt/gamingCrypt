@@ -330,27 +330,28 @@ class SystemPage(QWidget):
         keep = {g.appid for g in games}
         for appid in [a for a in self.cards if a not in keep]:
             self.cards.pop(appid).deleteLater()
-        self.grid.take_all()
-        for game in games:
-            card = self.cards.get(game.appid)
-            if card is None:
-                card = RomCard(game, covers=getattr(self.tab, "covers", None))
-                card.clicked.connect(self.tab.open_rom)
-                self.cards[game.appid] = card
-            self.grid.addWidget(card)
-        self.games = games
-        self.search.setPlaceholderText(f"🔍  Search {len(games)} games")
-        self.refresh()
+        with self.grid.batch():  # laid out once, not once per card (widgets.FlowLayout.batch)
+            self.grid.take_all()
+            for game in games:
+                card = self.cards.get(game.appid)
+                if card is None:
+                    card = RomCard(game, covers=getattr(self.tab, "covers", None))
+                    card.clicked.connect(self.tab.open_rom)
+                    self.cards[game.appid] = card
+                self.grid.put(card)
+            self.games = games
+            self.search.setPlaceholderText(f"🔍  Search {len(games)} games")
+            self.refresh()
 
     def refresh(self) -> None:
         words = self.search.text().lower().split()
         self.shown = []
-        for game in self.games:
-            visible = all(w in game.name.lower() for w in words)
-            self.cards[game.appid].setVisible(visible)
-            if visible:
-                self.shown.append(game.appid)
-        self.grid.invalidate()
+        with self.grid.batch():  # (typing in the search: hundreds of cards shown / hidden at once)
+            for game in self.games:
+                visible = all(w in game.name.lower() for w in words)
+                self.cards[game.appid].setVisible(visible)
+                if visible:
+                    self.shown.append(game.appid)
 
 
 class RomGamePage(QWidget):
