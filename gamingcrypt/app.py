@@ -865,11 +865,13 @@ class MainWindow(QMainWindow):
         from gamingcrypt.emulation import retroarch
         from gamingcrypt.steam import running
 
-        paused = self._paused = {"appid": rom.appid, "retroarch": rom.system.emulator == "retroarch", "done": False}
+        core = self.game_profiles.get(rom.appid).get("core") or (rom.system.cores or ("",))[0]
+        paused = self._paused = {"appid": rom.appid, "retroarch": rom.system.emulator == "retroarch", "done": False,
+                                 "ask": retroarch.asks_status(core)}  # (Cemu: asking crashes RetroArch)
 
         def pause() -> None:
             if paused["retroarch"]:
-                paused["done"] = retroarch.pause()  # (not one it was paused in already)
+                paused["done"] = retroarch.pause(ask=paused["ask"])  # (not one it was paused in already)
             else:  # an emulator without such a command (Eden): its processes stop
                 paused["done"] = running.pause_game(rom.appid, True) > 0
 
@@ -886,7 +888,7 @@ class MainWindow(QMainWindow):
             if not paused["done"]:
                 return
             if paused["retroarch"]:
-                retroarch.resume()
+                retroarch.resume(ask=paused["ask"])
             else:
                 running.pause_game(paused["appid"], False)
 

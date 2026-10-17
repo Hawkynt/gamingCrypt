@@ -58,6 +58,42 @@ def test_pause_and_resume_retroarch(fake):
     assert not retroarch.resume(fake.port) and fake.state == "PLAYING"
 
 
+def test_cemu_is_paused_without_asking_retroarch(fake):
+    """RetroArch 1.22 crashes answering GET_STATUS while Cemu runs (a NULL string in its reply -
+    command_get_status -> strlcpy): the Wii U game ended when the quick menu opened. Never asked."""
+    assert not retroarch.asks_status("cemu") and retroarch.asks_status("snes9x")
+    assert retroarch.pause(fake.port, ask=False) and wait_for(lambda: fake.state == "PAUSED")
+    assert retroarch.resume(fake.port, ask=False) and wait_for(lambda: fake.state == "PLAYING")
+    assert "GET_STATUS" not in fake.got and fake.got == ["PAUSE_TOGGLE", "PAUSE_TOGGLE"]
+
+
+def test_the_menu_over_a_wii_u_game_doesnt_ask_retroarch(qtbot, window, monkeypatch):  # noqa: F811
+    import dataclasses
+
+    from gamingcrypt.emulation.systems import BY_ID
+
+    calls = []
+    monkeypatch.setattr(retroarch, "pause", lambda *a, **k: calls.append(("pause", k.get("ask", True))) or True)
+    monkeypatch.setattr(retroarch, "resume", lambda *a, **k: calls.append(("resume", k.get("ask", True))) or True)
+    monkeypatch.setattr(retroarch, "status", lambda *a, **k: pytest.fail("asked RetroArch while Cemu runs"))
+    game = window._game
+    wind_waker = dataclasses.replace(game, system=BY_ID["wiiu"])
+    monkeypatch.setattr(window, "running_rom", lambda: wind_waker)
+    menu = playing(window)
+    qtbot.waitUntil(lambda: calls == [("pause", False)])
+    menu.close_menu()
+    qtbot.waitUntil(lambda: calls == [("pause", False), ("resume", False)])
+
+
+def test_other_games_are_still_asked_first(qtbot, window, monkeypatch):  # noqa: F811
+    """(so a game paused already isn't toggled back on)"""
+    calls = []
+    monkeypatch.setattr(retroarch, "pause", lambda *a, **k: calls.append(k.get("ask", True)) or True)
+    monkeypatch.setattr(retroarch, "resume", lambda *a, **k: True)
+    playing(window)
+    qtbot.waitUntil(lambda: calls == [True])
+
+
 def test_no_retroarch_nothing_happens():
     free = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     free.bind(("127.0.0.1", 0))
@@ -68,8 +104,8 @@ def test_no_retroarch_nothing_happens():
 
 def test_the_menu_pauses_the_game_and_closing_it_goes_on(qtbot, window, monkeypatch):  # noqa: F811
     calls = []
-    monkeypatch.setattr(retroarch, "pause", lambda *a: calls.append("pause") or True)
-    monkeypatch.setattr(retroarch, "resume", lambda *a: calls.append("resume") or True)
+    monkeypatch.setattr(retroarch, "pause", lambda *a, **k: calls.append("pause") or True)
+    monkeypatch.setattr(retroarch, "resume", lambda *a, **k: calls.append("resume") or True)
     menu = playing(window)
     qtbot.waitUntil(lambda: calls == ["pause"])
     menu.load_state_button.click()  # a page of the menu: still paused
@@ -86,8 +122,8 @@ def test_the_menu_pauses_the_game_and_closing_it_goes_on(qtbot, window, monkeypa
 
 def test_a_game_paused_already_is_left_paused(qtbot, window, monkeypatch):  # noqa: F811
     calls = []
-    monkeypatch.setattr(retroarch, "pause", lambda *a: calls.append("pause") or False)  # it was paused
-    monkeypatch.setattr(retroarch, "resume", lambda *a: calls.append("resume") or True)
+    monkeypatch.setattr(retroarch, "pause", lambda *a, **k: calls.append("pause") or False)  # it was paused
+    monkeypatch.setattr(retroarch, "resume", lambda *a, **k: calls.append("resume") or True)
     menu = playing(window)
     qtbot.waitUntil(lambda: calls == ["pause"])
     menu.close_menu()

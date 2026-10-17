@@ -22,10 +22,18 @@ class Device:
     connected: bool = False
     battery: int | None = None
     icon: str = ""
+    bonded: bool | None = None  # its key kept (None: BlueZ too old to say)
 
     @property
     def symbol(self) -> str:
         return ICONS.get(self.icon, "●")
+
+    @property
+    def half_paired(self) -> bool:
+        """Paired, but no key kept (the adapter wasn't pairable): BlueZ refuses a controller's
+        or keyboard's input then ("Rejected connection from !bonded device") - connected, and no
+        button does anything. Only pairing anew helps."""
+        return self.paired and self.bonded is False
 
 
 def parse_info(mac: str, text: str) -> Device:
@@ -37,7 +45,7 @@ def parse_info(mac: str, text: str) -> Device:
     battery = re.search(r"\((\d+)\)", fields.get("Battery Percentage", ""))
     return Device(mac, fields.get("Alias") or fields.get("Name") or mac, fields.get("Paired") == "yes",
                   fields.get("Connected") == "yes", int(battery.group(1)) if battery else None,
-                  fields.get("Icon", ""))
+                  fields.get("Icon", ""), {"yes": True, "no": False}.get(fields.get("Bonded", "")))
 
 
 class Bluetooth:
@@ -89,8 +97,13 @@ class Bluetooth:
 
     def pair(self, mac: str) -> tuple[bool, str]:
         """Pair, trust (reconnects by itself later) and connect - controllers and headphones
-        need no PIN (NoInputNoOutput agent)."""
+        need no PIN (NoInputNoOutput agent). The adapter pairable first: otherwise BlueZ pairs
+        without keeping the key, and refuses a controller's input afterwards. A device paired
+        that way is removed and paired anew."""
         mac = self._check(mac)
+        if parse_info(mac, self._ctl("info", mac).stdout).half_paired:
+            self._ctl("remove", mac)
+        self._ctl("pairable", "on")
         paired = self._ctl("--agent", "NoInputNoOutput", "pair", mac, timeout=40)
         if not self._ok(paired, "Pairing successful", "AlreadyExists"):
             return False, "Pairing failed - put the device in pairing mode and try again"

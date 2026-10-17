@@ -444,13 +444,29 @@ def playing(port: int = COMMAND_PORT, timeout: float = 0.3) -> bool:
     return status(port, timeout) == "playing"
 
 
-def pause(port: int = COMMAND_PORT) -> bool:
-    """The game stands still (the quick menu is open) - True: it was running, now it's paused."""
+# Cores RetroArch must never be asked GET_STATUS about: its answer copies a string that's NULL with
+# them (command_get_status -> strlcpy: no info file for the core, a game it loads itself) - and
+# RetroArch 1.22 crashes, the game with it. Seen with Cemu: the Wii U game ended as soon as the
+# quick menu asked whether to pause it.
+NO_STATUS = {"cemu"}
+
+
+def asks_status(core: str | None) -> bool:
+    return core not in NO_STATUS
+
+
+def pause(port: int = COMMAND_PORT, ask: bool = True) -> bool:
+    """The game stands still (the quick menu is open) - True: it was running, now it's paused.
+    ask=False (NO_STATUS): paused without asking first."""
+    if not ask:
+        return send("PAUSE_TOGGLE", port)
     return status(port) == "playing" and send("PAUSE_TOGGLE", port)
 
 
-def resume(port: int = COMMAND_PORT) -> bool:
-    """On again after pause()."""
+def resume(port: int = COMMAND_PORT, ask: bool = True) -> bool:
+    """On again after pause() (ask=False: only after a pause() that sent it)."""
+    if not ask:
+        return send("PAUSE_TOGGLE", port)
     return status(port) == "paused" and send("PAUSE_TOGGLE", port)
 
 
