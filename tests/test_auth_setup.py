@@ -206,6 +206,58 @@ def test_failed_change_keeps_old_kdf(qtbot):
     assert cfg["unlock"]["kdf"] == old and saved == []
 
 
+def with_a_user(cfg, admin_code="1234"):
+    from gamingcrypt import users
+    from gamingcrypt.unlock import kdf
+
+    cfg["unlock"]["kdf"] = kdf.new_params(n=2**4, r=8, p=1)
+    master = users.admin_master(cfg, admin_code, lambda s: s == admin_code)
+    users.add(cfg, "Mia", "pin", "5555", master)
+
+
+def rekey(qtbot, wizard, current, new="9876"):
+    wizard.submit_current(current)
+    wizard.choose_method("pin")
+    wizard.submit_new(new)
+    with qtbot.waitSignal(wizard.completed, timeout=5000):
+        wizard.submit_confirm(new)
+
+
+def test_a_new_admin_code_keeps_the_users_codes_and_says_nothing(qtbot):
+    wizard, cfg, saved, log = make(qtbot, first_start=False, method="pin", current="1234")
+    with_a_user(cfg)
+    rekey(qtbot, wizard, "1234")
+    assert wizard.users_lost_codes == []
+
+
+def test_users_who_lose_their_code_are_named(qtbot):
+    """The admin's key slot doesn't open with the old code (it was set some other way): the
+    users' codes can't follow - who's affected is known, not dropped silently."""
+    wizard, cfg, saved, log = make(qtbot, first_start=False, method="pin", current="1234")
+    with_a_user(cfg, admin_code="0000")  # the slot from another code
+    rekey(qtbot, wizard, "1234")
+    assert wizard.users_lost_codes == ["Mia"]
+
+
+def test_settings_says_who_needs_a_new_code(qtbot):
+    from PySide6.QtWidgets import QWidget
+
+    from gamingcrypt.ui.settings_tab import SettingsTab
+
+    tab = SettingsTab(copy.deepcopy(DEFAULTS), lambda c: None)
+    qtbot.addWidget(tab)
+    for lost, said in (([], "Unlock method changed"),
+                       (["Mia"], "Unlock method changed - Mia needs a new code: give it one below, in Users"),
+                       (["Mia", "Ben", "Lea"], "Mia, Ben and Lea need a new code: give them one")):
+        wizard = QWidget()
+        wizard.new_secret, wizard.users_lost_codes = "9876", lost
+        tab.wizard = wizard
+        tab.addWidget(wizard)
+        tab._reset_done()
+        assert said in tab.status.text()
+    assert tab.status.text().count("need") == 1
+
+
 # --- create a new container ----------------------------------------------------
 
 from gamingcrypt.ui.auth_setup import validate_new_container  # noqa: E402
@@ -247,6 +299,20 @@ def test_create_container_flow(qtbot, tmp_path):
     assert unlock["method"] == "grid5" and unlock["kdf"] == params
     with qtbot.waitSignal(wizard.completed):
         wizard.done_page.findChildren(type(wizard.cancel_button))[0].click()
+
+
+def test_a_new_container_names_the_users_whose_codes_are_gone(qtbot, tmp_path):
+    """Another volume: no user's code opens it - each needs a new one, and the admin is told."""
+    wizard, cfg, saved, log = make(qtbot, first_start=False, method="pin", current="1234")
+    with_a_user(cfg)
+    wizard.creating = True
+    wizard.create_button.click()
+    wizard.submit_create(str(tmp_path / "games.vc"), "32", str(tmp_path / "Games"), free_bytes=PLENTY)
+    wizard.choose_method("pin")
+    wizard.submit_new("9876")
+    wizard.submit_confirm("9876")
+    qtbot.waitUntil(lambda: wizard.step == "done")
+    assert wizard.users_lost_codes == ["Mia"]
 
 
 def test_create_shows_progress(qtbot, tmp_path):

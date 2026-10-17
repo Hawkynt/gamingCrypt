@@ -89,11 +89,42 @@ def test_unlock_wrong_password():
     assert "Wrong code" in result.message
 
 
-def test_unlock_already_mounted_skips_mount():
-    runner = FakeRunner([(0, "1: /dev/sdb1 /dev/mapper/veracrypt1 /mnt/games", "")])
+MOUNTED = (0, "1: /dev/sdb1 /dev/mapper/veracrypt1 /mnt/games", "")
+WRONG = (1, "", "Error: Incorrect password or not a VeraCrypt volume.")
+
+
+def test_open_drive_still_checks_the_code():
+    """The drive open already (a lock that couldn't close it, GamingCrypt started again): a wrong
+    code must not open it - VeraCrypt checks it, the drive closed and opened with the code."""
+    runner = FakeRunner([MOUNTED, (0, "", ""), WRONG])
+    result = make(runner).unlock("0000")
+    assert not result.success and "Wrong code" in result.message
+    assert "-d" in runner.calls[1][0] and "--force" not in runner.calls[1][0]  # closed, not forced
+    assert "--mount" in runner.calls[2][0]
+    runner = FakeRunner([MOUNTED, (0, "", ""), (0, "", "")])
+    assert make(runner).unlock("1234").success and len(runner.calls) == 3
+
+
+def test_open_and_busy_drive_opens_with_no_code():
+    """Something still uses it (a game?): not closed by force, and nobody gets in unchecked."""
+    runner = FakeRunner([MOUNTED, (1, "", "Error: device is busy")])
     result = make(runner).unlock("1234")
-    assert result.success
-    assert len(runner.calls) == 1
+    assert not result.success and "can't be checked" in result.message
+    assert len(runner.calls) == 2 and not any("--force" in cmd for cmd, _ in runner.calls)
+
+
+def test_open_drive_checked_with_the_admins_key_slot():
+    """With users there's a key slot for the admin's code: checked by it, the drive stays open."""
+    from gamingcrypt.unlock import kdf, keyslots
+
+    slot = keyslots.new_slot("482916", keyslots.new_master(), kdf.new_params(n=2**4, r=8, p=1))
+    runner = FakeRunner([MOUNTED])
+    assert make(runner, keyring={"admin": slot}).unlock("482916").success and len(runner.calls) == 1
+    runner = FakeRunner([MOUNTED])
+    result = make(runner, keyring={"admin": slot}).unlock("000000")
+    assert not result.success and "Wrong code" in result.message and len(runner.calls) == 1
+    cfg = {"volume": "/dev/sdb1", "keyring": {"admin": slot}}
+    assert VeraCryptUnlocker.from_config(cfg).keyring == {"admin": slot}
 
 
 def test_unlock_not_configured():

@@ -165,6 +165,19 @@ def test_download_cancelled_in_steam(qtbot):
     assert page.main_button.isEnabled()
 
 
+def test_a_download_paused_in_the_queue_says_so(qtbot):
+    """Another download goes first: the page said "Downloading 25%" while nothing moved - it's
+    paused, waiting its turn in Downloads (and not cancelled)."""
+    tab = silent_tab(qtbot, progress_steps=[InstallProgress("paused", 1, 4)])
+    tab.service.installs.append(292030)  # queued earlier
+    tab.open_game(292030)
+    page = tab.currentWidget()
+    qtbot.waitUntil(lambda: "Paused" in page.status.text())
+    text = page.status.text()
+    assert "waits its turn in Downloads - 25% done" in text and "Move it to the top" in text
+    assert "Downloading" not in text and "cancelled" not in text and page.downloading
+
+
 def test_reopening_page_resumes_watching(qtbot):
     tab = silent_tab(qtbot, progress_steps=[InstallProgress("downloading", 1, 4)])
     tab.service.installs.append(292030)  # queued earlier

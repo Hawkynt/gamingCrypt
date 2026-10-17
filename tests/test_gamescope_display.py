@@ -271,6 +271,36 @@ def test_refresh_rate_changes_without_restarting_gaming_mode(qtbot, monkeypatch)
     d.gs_refresh.setCurrentIndex(d.gs_refresh.findData(45))
     d.gs_apply.click()
     assert "Could not" in d.status.text() and restarts == []
+    assert saved[-1]["system"]["gaming_refresh"] == 0  # not taken: not set again at the next start
+
+
+def test_a_reverted_resolution_does_not_come_back_at_the_next_login(qtbot, monkeypatch):
+    """Apply only tries it: the resolution is this user's (set at their login) once it's kept -
+    reverted (by the countdown, or by the session when gamescope can't start with it) it's not."""
+    from gamingcrypt.app import MainWindow
+    from gamingcrypt.config import DEFAULTS
+    from gamingcrypt.system.controls import SystemControls
+    from gamingcrypt.ui.settings_tab import SettingsTab
+
+    monkeypatch.setenv("GAMINGCRYPT_SESSION", "1")
+    monkeypatch.setattr(mode, "panel_size", lambda *a: (1280, 800))
+    cfg = copy.deepcopy(DEFAULTS)
+    tab = SettingsTab(cfg, lambda c: None, system=SystemControls(), restart_gaming=lambda: None)
+    qtbot.addWidget(tab)
+    d = tab.display_section
+    d.gs_resolution.setCurrentIndex(d.gs_resolution.findData("960x600"))
+    d.gs_apply.click()
+    assert mode.display_pending() and cfg["system"]["gaming_resolution"] == ""  # only tried
+    window = MainWindow(cfg, lambda c: None)  # gaming mode started again with it
+    qtbot.addWidget(window)
+    monkeypatch.setattr(window, "restart_gaming_mode", lambda: None)
+    window.check_display_change()
+    window.display_confirm.revert_button.click()
+    assert cfg["system"]["gaming_resolution"] == "" and not window.own_resolution_differs()
+    d.apply_gamescope()  # tried again (the button waits for the restart: Settings comes back anew)
+    window.check_display_change()
+    window.display_confirm.keep_button.click()
+    assert cfg["system"]["gaming_resolution"] == "960x600"  # kept: this user's from now on
 
 
 def test_a_refresh_rate_among_gamescopes_options_is_taken_out(qtbot, monkeypatch):

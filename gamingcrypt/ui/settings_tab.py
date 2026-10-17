@@ -30,6 +30,11 @@ LOCK_AFTER_SLEEP = [("Never", None), ("Right away", 0), ("After 5 minutes", 5), 
 API_KEY_RE = re.compile(r"^[0-9A-Fa-f]{32}$")
 
 
+def _names(names: list[str]) -> str:
+    """Mia / Mia and Ben / Mia, Ben and Lea."""
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
 class ApiKeyPage(QWidget):
     """Enter the Steam Web API key with the on-screen keyboard."""
 
@@ -98,8 +103,10 @@ class SettingsTab(QStackedWidget):
         ssh=None,
         drive_share=None,
         admin_check=None,
+        code_changed=None,
     ):
         super().__init__(parent)
+        self.code_changed = code_changed  # (code): whoever is logged in unlocks with that from now on
         self.config = config
         self.save = save
         self.unlocker_factory = unlocker_factory
@@ -239,7 +246,7 @@ class SettingsTab(QStackedWidget):
 
         # the volume's own code (and which volume) is the admin's business
         self.reset_button.setVisible(users.current(config).admin)
-        self.users_section = UsersSection(self, admin_check)
+        self.users_section = UsersSection(self, admin_check, code_changed)
         layout.addWidget(self.users_section)
         # lock after sleep (gaming mode: the power button suspends)
         row = QHBoxLayout()
@@ -431,7 +438,7 @@ class SettingsTab(QStackedWidget):
         unlock = self.config["unlock"]
         first_start = not unlock.get("volume") or not unlock.get("method")
         self.wizard = AuthSetupWizard(self.config, self.save, self.unlocker_factory, first_start=first_start)
-        self.wizard.completed.connect(lambda: self._close_wizard("Unlock method changed"))
+        self.wizard.completed.connect(self._reset_done)
         self.wizard.cancelled.connect(lambda: self._close_wizard(""))
         self.addWidget(self.wizard)
         self.setCurrentWidget(self.wizard)
@@ -542,6 +549,15 @@ class SettingsTab(QStackedWidget):
             page.deleteLater()
         self.refresh()
         set_status(self.status, message)
+
+    def _reset_done(self) -> None:
+        """The admin's code is a new one: the lock after sleep checks that one from now on."""
+        if self.wizard is not None and self.wizard.new_secret and self.code_changed is not None:
+            self.code_changed(self.wizard.new_secret)
+        lost = getattr(self.wizard, "users_lost_codes", None) or []
+        self._close_wizard("Unlock method changed" + (
+            f" - {_names(lost)} {'needs' if len(lost) == 1 else 'need'} a new code: give "
+            f"{'it' if len(lost) == 1 else 'them'} one below, in Users" if lost else ""))
 
     def _close_wizard(self, message: str) -> None:
         self.setCurrentWidget(self.overview)

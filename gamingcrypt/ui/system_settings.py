@@ -271,8 +271,10 @@ class DisplaySection(Section):
         w, h = (int(v) for v in self.gs_resolution.currentData().split("x"))
         native = mode.panel_size() or (1280, 800)
         refresh = (self.gs_refresh.currentData() or 0) if self.gs_rates else 0
+        before = self.config["system"].get("gaming_refresh", 0)
         self.config["system"]["gaming_refresh"] = refresh  # set again at every start (see app)
-        self.config["system"]["gaming_resolution"] = f"{w}x{h}"  # (each user their own: set at their login)
+        # (the resolution - each user their own, set at their login - is kept once "Keep" is
+        # tapped, see app.keep_display: a reverted one mustn't come back at the next login)
         self.save(self.config)
         if not self._needs_restart():
             if not self.gs_rates:
@@ -280,6 +282,9 @@ class DisplaySection(Section):
             from gamingcrypt.system import gamescope_ctl
 
             ok = (self.set_refresh or gamescope_ctl.set_dynamic_refresh)(refresh)
+            if not ok:  # not taken: not set again at the next start either
+                self.config["system"]["gaming_refresh"] = before
+                self.save(self.config)
             set_status(self.status, f"Refresh rate: {self.gs_refresh.currentText()}" if ok
                        else "Could not change the refresh rate", error=not ok)
             return
@@ -532,8 +537,11 @@ class OverlayBarSection(Section):
         self.config, self.save = config, save
         self.write = write or gamescope_ctl.set_bar
         self.settings = overlay_bar.settings_of(config)
+        from gamingcrypt.input import hotkeys
+
+        menu = " + ".join(hotkeys.load(config)["quick_menu"].parts())  # (its button on this device)
         self.body.addWidget(_label("Over a game: FPS, battery, time … - switched on and off in the quick menu "
-                                   "(⊞ → Performance overlay)."))
+                                   f"({menu} → Performance overlay)."))
         self.choices: dict[str, dict] = {}
         for key, caption, table in (("position", "Position", overlay_bar.POSITIONS),
                                     ("size", "Size", overlay_bar.SIZES)):

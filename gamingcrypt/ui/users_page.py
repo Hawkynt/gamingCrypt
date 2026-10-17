@@ -122,6 +122,8 @@ class CodeFlow(QWidget):
 
     def show_step(self) -> None:
         self.pending = None
+        while self.index < len(self.steps) and self.steps[self.index][1] in self.answers:
+            self.index += 1  # entered already (a wrong code after it is asked again on its own)
         if self.index >= len(self.steps):
             self._finish()
             return
@@ -186,7 +188,13 @@ class CodeFlow(QWidget):
     def _failed(self, exc: Exception) -> None:
         self.busy = False
         self.cancel_button.setEnabled(True)
-        self.answers, self.index = {}, 0
+        keys = [step[1] for step in self.steps]
+        wrong = getattr(exc, "step", None) if isinstance(exc, users.UserError) else None
+        if wrong in keys:  # only that code again: the new one, chosen and repeated before, stays
+            self.answers.pop(wrong, None)
+            self.index = keys.index(wrong)
+        else:
+            self.answers, self.index = {}, 0
         self.show_step()
         set_status(self.status, str(exc) if isinstance(exc, users.UserError) else f"That didn't work: {exc}",
                    error=True)
@@ -203,13 +211,15 @@ class CodeFlow(QWidget):
 class UsersSection(QFrame):
     """The list of users with what can be done with each. ``tab``: the Settings tab (its config,
     its save and its stack of pages); ``admin_check(code) -> bool``: is that the code the admin
-    unlocked with? (needed once, for the very first user)."""
+    unlocked with? (needed once, for the very first user); ``code_changed(code)``: whoever is
+    logged in has a new code (the lock after sleep checks that one from now on)."""
 
     changed = Signal()
 
-    def __init__(self, tab, admin_check: Callable[[str], bool] | None = None):
+    def __init__(self, tab, admin_check: Callable[[str], bool] | None = None,
+                 code_changed: Callable[[str], None] | None = None):
         super().__init__()
-        self.tab, self.admin_check = tab, admin_check
+        self.tab, self.admin_check, self.code_changed = tab, admin_check, code_changed
         self.setObjectName("card")
         self.body = QVBoxLayout(self)
         self.body.setContentsMargins(24, 18, 24, 18)
@@ -404,18 +414,22 @@ class UsersSection(QFrame):
             def finish(answers: dict) -> str:
                 master = users.user_master(config, user.id, answers["old"])
                 if master is None:
-                    raise users.UserError("That's not your current code")
+                    raise users.UserError("That's not your current code", step="old")
                 users.set_code(config, user.id, answers["new_method"], answers["new"], master)
                 return "Your code is changed"
 
             steps = [("code", "old", user.method, f"Your current {METHOD_LABELS.get(user.method, 'code')}"),
                      ("new", "new", "How do you want to unlock from now on?")]
-        self._run(CodeFlow(f"A new code for {user.name}", steps, finish))
+        flow = CodeFlow(f"A new code for {user.name}", steps, finish)
+        own = user.id == me.id
+        self._run(flow, lambda: self.code_changed(flow.answers["new"]) if own and self.code_changed else None)
 
-    def _run(self, flow: CodeFlow) -> None:
+    def _run(self, flow: CodeFlow, then: Callable[[], None] | None = None) -> None:
         def done(message: str) -> None:
             self.tab.save(self.config)
             users.write_sidecar(self.config)
+            if then is not None:
+                then()
             self._close(message)
             self.changed.emit()
 

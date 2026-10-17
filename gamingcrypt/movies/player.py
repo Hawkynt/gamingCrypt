@@ -50,6 +50,21 @@ def socket_path() -> Path:
     return Path(runtime) / SOCKET_NAME
 
 
+def ended_path(sock: Path) -> Path:
+    """Left by touch.lua when the player ran to the file's end - not when it was stopped (B,
+    ✕, Force quit): only then the next episode starts."""
+    return sock.with_name(sock.name + ".ended")
+
+
+def played_to_the_end(sock: Path) -> bool:
+    """Did the player that just went away run to the end? Once: the mark is taken away."""
+    try:
+        ended_path(sock).unlink()
+    except OSError:
+        return False
+    return True
+
+
 def input_conf(data_dir: Path) -> Path:
     path = data_dir / "mpv-input.conf"
     if not path.exists() or path.read_text() != INPUT_CONF:
@@ -85,6 +100,7 @@ def launch(movie: Movie, data_dir: Path, log_dir: Path, start: float = 0, popen=
     sock = socket_path()
     sock.parent.mkdir(parents=True, exist_ok=True)
     sock.unlink(missing_ok=True)  # from a player that's gone
+    ended_path(sock).unlink(missing_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
     try:
         with open(log_dir / LOG_NAME, "wb") as log:

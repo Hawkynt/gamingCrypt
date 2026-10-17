@@ -441,6 +441,7 @@ class RomGamePage(QWidget):
         self.confirm = RemoveConfirm(self.tab.emulation, self.game)
         self.confirm.cancelled.connect(self.close_confirm)
         self.confirm.removed.connect(self.removed)
+        self.confirm.failed.connect(self.remove_failed)
         from gamingcrypt.ui.modal import show_modal
 
         self.confirm_modal = show_modal(self, self.confirm, self.close_confirm)  # over the page and its Options
@@ -455,6 +456,11 @@ class RomGamePage(QWidget):
         self.tab.home.show_notice(message)
         self.tab.reload_roms()
         self.tab.back()  # the game is gone
+
+    def remove_failed(self, message: str) -> None:
+        """It's still there: the page stays, and says why - in red, not as if it had worked."""
+        self.close_confirm()
+        set_status(self.status, message, error=True)
 
     def _options(self) -> QGridLayout:
         """Core, memory card, screen and shaders (from the next start)."""

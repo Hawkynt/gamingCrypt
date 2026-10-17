@@ -133,11 +133,28 @@ def test_the_next_episode_starts_when_one_ran_to_its_end(qtbot, root):
     current = bb.episodes[2]  # S01E03
     tab.play(current)
     tab.playback.position = lambda sock: (2790.0, 2800.0)  # the credits are over
+    tab.playback.ended = lambda sock: True  # mpv: it ran to the end
     tab.playback.poll()
     qtbot.waitUntil(lambda: tab.playback.last_where is not None)
     tab.movie_ended(current.appid)
     qtbot.waitUntil(lambda: played == ["S01E03", "S02E01"])  # on into season 2
     assert library.scan(root)[0].episodes[2].info.watched
+
+
+def test_stopped_in_the_last_seconds_starts_nothing(qtbot, root):
+    """B (stop) during the credits: stop means stop - the next episode used to start, because
+    "close to the end when the player went away" looked like having run out."""
+    played = []
+    tab = make_tab(qtbot, root, launcher=lambda e, start: (played.append(e.code), (True, "ok"))[1])
+    current = tab.shows[0].episodes[2]
+    tab.play(current)
+    tab.playback.position = lambda sock: (2790.0, 2800.0)
+    tab.playback.ended = lambda sock: False  # mpv: stopped, not at the end
+    tab.playback.poll()
+    qtbot.waitUntil(lambda: tab.playback.last_where is not None)
+    tab.movie_ended(current.appid)
+    qtbot.wait(200)
+    assert played == ["S01E03"]
 
 
 def test_stopped_before_the_end_starts_nothing(qtbot, root):
@@ -146,6 +163,7 @@ def test_stopped_before_the_end_starts_nothing(qtbot, root):
     current = tab.shows[0].episodes[2]
     tab.play(current)
     tab.playback.position = lambda sock: (1500.0, 2800.0)
+    tab.playback.ended = lambda sock: False
     tab.playback.poll()
     qtbot.waitUntil(lambda: tab.playback.last_where is not None)
     tab.movie_ended(current.appid)
@@ -185,6 +203,22 @@ def test_remove_a_show(qtbot, root):
     qtbot.waitUntil(lambda: tab.currentWidget() is tab.home)
     qtbot.waitUntil(lambda: titles(tab) == ["Dark"])
     assert not (root / "Breaking Bad (2008)").exists() and tab.home.notice.text().startswith("Breaking Bad removed")
+
+
+def test_a_failed_show_removal_stays_on_the_page_and_says_why(qtbot, root, monkeypatch):
+    def fails(*a, **k):
+        raise OSError("Permission denied")
+
+    monkeypatch.setattr(library, "remove", fails)
+    tab = make_tab(qtbot, root)
+    tab.open_show(next(s for s in tab.shows if s.title == "Breaking Bad"))
+    page = tab.currentWidget()
+    page.options_button.click()
+    page.remove_button.click()
+    page.confirm.remove_button.click()
+    qtbot.waitUntil(lambda: "Permission denied" in page.status.text())
+    assert tab.currentWidget() is page and page.confirm is None and page.status.property("error")
+    assert (root / "Breaking Bad (2008)").exists()
 
 
 def test_unknown_shows_are_looked_up(qtbot, root):

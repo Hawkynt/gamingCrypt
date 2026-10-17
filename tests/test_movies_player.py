@@ -183,6 +183,50 @@ def test_touch_script_is_there_and_shipped():
         assert subprocess.run([luajit, "-b", str(player.TOUCH_SCRIPT), "/dev/null"]).returncode == 0
 
 
+def test_played_to_the_end_is_said_once(tmp_path):
+    sock = tmp_path / player.SOCKET_NAME
+    assert not player.played_to_the_end(sock)  # stopped (or killed): no mark
+    player.ended_path(sock).write_text("eof\n")
+    assert player.played_to_the_end(sock) and not player.played_to_the_end(sock)
+
+
+def test_launch_clears_an_old_end_mark(movie, tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "run"))
+    (tmp_path / "run").mkdir()
+    player.ended_path(tmp_path / "run" / player.SOCKET_NAME).write_text("eof\n")  # from the last episode
+    player.launch(movie, tmp_path / "data", tmp_path / "logs", popen=lambda *a, **k: None, which=lambda n: "mpv")
+    assert not player.played_to_the_end(tmp_path / "run" / player.SOCKET_NAME)
+
+
+STUB_MP = """
+local stub
+stub = setmetatable({}, {__index = function() return stub end, __call = function() return stub end})
+handlers = {}
+local mp = setmetatable({
+    register_event = function(name, fn) handlers[name] = fn end,
+    get_property = function(name, default) if name == "input-ipc-server" then return SOCK end return default end,
+}, {__index = function() return stub end})
+package.preload["mp"] = function() return mp end
+"""
+
+
+@pytest.mark.parametrize("reason,marked", [("eof", True), ("quit", False), ("stop", False), ("error", False)])
+def test_touch_script_marks_only_a_real_end(tmp_path, reason, marked):
+    """mpv's own word: the file ran out ("eof") - B / ✕ quit, Force quit kills: no mark."""
+    import shutil
+    import subprocess
+
+    lua = shutil.which("luajit") or shutil.which("lua5.4") or shutil.which("lua")  # (goto: not 5.1)
+    if not lua:
+        pytest.skip("no Lua to run the script with")
+    sock = tmp_path / player.SOCKET_NAME
+    program = (f'SOCK = "{sock}"\n' + STUB_MP + f'dofile("{player.TOUCH_SCRIPT}")\n'
+               f'handlers["end-file"]({{reason = "{reason}"}})\n')
+    result = subprocess.run([lua, "-"], input=program, text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    assert player.played_to_the_end(sock) is marked
+
+
 def test_touch_mode_switch():
     import subprocess
 

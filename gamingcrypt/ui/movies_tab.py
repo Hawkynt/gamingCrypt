@@ -432,6 +432,7 @@ class MoviesHome(QWidget):
 
 class RemoveMovieConfirm(QFrame):
     removed = Signal(str)
+    failed = Signal(str)  # (not removed: the page stays, the message is an error)
     cancelled = Signal()
 
     def __init__(self, movie: Movie, root: Path, parent: QWidget | None = None, question: str | None = None,
@@ -470,7 +471,7 @@ class RemoveMovieConfirm(QFrame):
         movie = self.movie
         run_async(self.work,
                   lambda freed: self.removed.emit(f"{movie.title} removed, {format_size(freed)} freed"),
-                  lambda exc: self.removed.emit(f"Could not remove it: {exc}"), owner=self)
+                  lambda exc: self.failed.emit(f"Could not remove it: {exc}"), owner=self)
 
 
 class MoviePage(QWidget):
@@ -618,6 +619,7 @@ class MoviePage(QWidget):
         self.confirm = RemoveMovieConfirm(self.movie, self.tab.root)
         self.confirm.cancelled.connect(self.close_confirm)
         self.confirm.removed.connect(self.removed)
+        self.confirm.failed.connect(self.remove_failed)
         from gamingcrypt.ui.modal import show_modal
 
         self.confirm_modal = show_modal(self, self.confirm, self.close_confirm)  # over the page and its Options
@@ -632,6 +634,11 @@ class MoviePage(QWidget):
         self.tab.home.show_notice(message)
         self.tab.back()
         self.tab.reload()
+
+    def remove_failed(self, message: str) -> None:
+        """It's still there: the page stays, and says why - in red, not as if it had worked."""
+        self.close_confirm()
+        self.say(message, error=True)
 
     def game_session_ended(self, appid: int, failed: bool) -> None:
         if appid == self.movie.appid and failed:
@@ -669,14 +676,16 @@ class Playback(QObject):
 
     changed = Signal(object)  # the movie, after it ended
     played_to_the_end = Signal(object)  # ... and it ran to its end (not stopped): next episode
-    END_S = 20  # this close to the end when the player went away: it ran out
 
-    def __init__(self, parent: QObject | None = None, position=None, socket_path=None):
+    def __init__(self, parent: QObject | None = None, position=None, socket_path=None, ended=None):
         super().__init__(parent)
         from gamingcrypt.movies import player
 
         self.position = position or player.position
         self.socket_path = socket_path or player.socket_path
+        # (sock) -> did the player run to the end? Said by mpv itself - stopped in the last
+        # seconds is still stopped (where it was is only asked every few seconds)
+        self.ended = ended or player.played_to_the_end
         self.movie: Movie | None = None
         self.session: object | None = None
         self.lock = threading.Lock()
@@ -715,8 +724,7 @@ class Playback(QObject):
             return
         self.timer.stop()
         self.movie = self.session = None
-        where = self.last_where
-        at_end = where is not None and where[1] > 0 and where[0] >= where[1] - self.END_S
+        at_end = self.ended(self.socket_path())
 
         def work():
             with self.lock:

@@ -31,6 +31,7 @@ class RemoveConfirm(QFrame):
     memory card are deleted too (asked on its own: a tick box next to Remove was easy to miss)."""
 
     removed = Signal(str)  # what happened
+    failed = Signal(str)  # (not removed: the page stays, the message is an error)
     cancelled = Signal()
 
     def __init__(self, paths, game, parent=None):
@@ -89,4 +90,4 @@ class RemoveConfirm(QFrame):
             self.removed.emit(f"{game.name} removed, {format_size(freed)} freed{kept}")
 
         run_async(lambda: removal.remove(paths, game, with_saves), done,
-                  lambda exc: self.removed.emit(f"Could not remove it: {exc}"), owner=self)
+                  lambda exc: self.failed.emit(f"Could not remove it: {exc}"), owner=self)

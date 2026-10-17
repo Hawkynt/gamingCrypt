@@ -22,7 +22,7 @@ import tempfile
 VERACRYPT = "/usr/bin/veracrypt"  # replaced by install.sh
 # Raised whenever the helper learns something new: GamingCrypt compares it with the
 # installed helper ("helper version") and asks to finish the update when it's older.
-HELPER_VERSION = 3
+HELPER_VERSION = 4
 RYZENADJ = "/usr/bin/ryzenadj"
 EFIBOOTMGR = ["/usr/bin/efibootmgr", "/usr/sbin/efibootmgr"]
 SYS = "/sys"
@@ -420,6 +420,19 @@ def set_boot_next(args: list[str], run=subprocess.run, efibootmgr: str | None = 
     return result.returncode
 
 
+def clear_boot_next(run=subprocess.run, efibootmgr: str | None = None) -> int:
+    """boot-next taken back: the restart into that system didn't happen - the next start is the
+    usual one again, not a surprise later."""
+    tool = efibootmgr or _efibootmgr()
+    if tool is None:
+        print("Error: gamingcrypt helper: efibootmgr is not installed", file=sys.stderr)
+        return 2
+    result = run([tool, "--delete-bootnext"], capture_output=True, text=True)
+    if result.returncode != 0:
+        print("Error: gamingcrypt helper: " + (result.stderr or "efibootmgr failed").strip(), file=sys.stderr)
+    return result.returncode
+
+
 # --- SMB shares: one Samba for both ------------------------------------------------------
 # "temp": a folder of the drive, only while an upload page is open; "drive": the whole
 # drive, as long as it's switched on in Settings -> Services. They share one smbd (one port
@@ -648,6 +661,8 @@ def main(argv: list[str]) -> int:
         return set_power_limit(argv[1:])
     if argv[:1] == ["boot-next"]:
         return set_boot_next(argv[1:])
+    if argv == ["boot-next-clear"]:
+        return clear_boot_next()
     if argv[:1] == ["ssh"]:
         return set_ssh(argv[1:])
     if argv[:1] in (["smb-stop"], ["smb-drive-stop"]):

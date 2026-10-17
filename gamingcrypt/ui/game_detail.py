@@ -381,6 +381,10 @@ class GameDetailPage(QWidget):
                                     f"{format_size(p.total)}" + (f" · {speed}" if speed else ""))
         elif p.state == "queued":
             set_status(self.status, "Waiting for Steam to start the download…")
+        elif p.state == "paused":  # another download goes first (the Downloads tab's order)
+            done = f" - {p.percent:.0f}% done" if p.total else ""
+            set_status(self.status, f"Paused: it waits its turn in Downloads{done}. Move it to the top "
+                                    "there to download it now.")
         else:
             self._progress_timer.stop()
             self.downloading = False

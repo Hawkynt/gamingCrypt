@@ -74,13 +74,16 @@ def test_adding_a_user(qtbot, tab):
 
 
 def test_the_admins_code_has_to_be_right(qtbot, tab):
+    """Wrong: only the admin's code is asked again - Mia's new code, chosen and repeated before
+    it, stays (it was all thrown away and asked from the start)."""
     flow = add(qtbot, tab, "Mia", "pin", "1111", admin_code="000000")
     qtbot.waitUntil(lambda: "not the admin's code" in flow.status.text(), timeout=10000)
-    assert tab.currentWidget() is flow and len(users.all_users(tab.config)) == 1 and flow.index == 0  # from the start
-    enter_new(flow, "pin", "1111")
+    assert tab.currentWidget() is flow and len(users.all_users(tab.config)) == 1
+    assert flow.index == 1 and "admin's code" in flow.prompt.text() and flow.answers["new"] == "1111"
     flow.input.secret_entered.emit(ADMIN_CODE)
     qtbot.waitUntil(lambda: tab.currentWidget() is tab.overview, timeout=10000)
-    assert len(users.all_users(tab.config)) == 2
+    mia = users.all_users(tab.config)[1]
+    assert users.volume_password(tab.config, mia.id, "1111")  # the code entered before the wrong one
 
 
 def test_a_new_code_has_to_be_repeated(qtbot, tab):
@@ -161,10 +164,75 @@ def test_a_user_sees_only_themselves_and_changes_their_own_code(qtbot):
     flow.input.secret_entered.emit("9999")  # not her current one
     enter_new(flow, "pin", "3333")
     qtbot.waitUntil(lambda: "not your current code" in flow.status.text(), timeout=10000)
+    assert flow.index == 0 and flow.answers["new"] == "3333"  # only the current one again
+    flow.input.secret_entered.emit("1111")
+    qtbot.waitUntil(lambda: tab.currentWidget() is tab.overview, timeout=10000)
+    assert users.volume_password(cfg, mia.id, "3333") and users.volume_password(cfg, mia.id, "1111") is None
+
+
+def test_a_changed_code_is_the_one_the_lock_after_sleep_checks(qtbot):
+    """Whoever is logged in changes their own code: the lock after sleep must take the new one
+    (it kept checking the old one). Another user's new code doesn't touch it."""
+    from gamingcrypt.ui.settings_tab import SettingsTab
+
+    cfg = config()
+    master = users.admin_master(cfg, ADMIN_CODE, verify)
+    mia = users.add(cfg, "Mia", "pin", "1111", master)
+    users.enter(cfg, mia.id)
+    changed = []
+    tab = SettingsTab(cfg, lambda c: None, system=SystemControls(), code_changed=changed.append)
+    qtbot.addWidget(tab)
+    tab.show()
+    tab.users_section.rows[mia.id]["code"].click()
+    flow = tab.currentWidget()
     flow.input.secret_entered.emit("1111")
     enter_new(flow, "pin", "3333")
     qtbot.waitUntil(lambda: tab.currentWidget() is tab.overview, timeout=10000)
-    assert users.volume_password(cfg, mia.id, "3333") and users.volume_password(cfg, mia.id, "1111") is None
+    assert changed == ["3333"]
+
+
+def test_the_admin_giving_someone_a_code_keeps_the_admins_check(qtbot, tab):
+    changed = []
+    tab.users_section.code_changed = changed.append
+    add(qtbot, tab, "Mia", "pin", "1111")
+    qtbot.waitUntil(lambda: tab.currentWidget() is tab.overview, timeout=10000)
+    mia = users.all_users(tab.config)[1]
+    tab.users_section.rows[mia.id]["code"].click()
+    flow = tab.currentWidget()
+    enter_new(flow, "pin", "2222")
+    flow.input.secret_entered.emit(ADMIN_CODE)
+    qtbot.waitUntil(lambda: tab.currentWidget() is tab.overview, timeout=10000)
+    assert changed == []  # Mia's code: the admin still unlocks with their own
+
+
+def test_the_admins_new_drive_code_is_the_one_the_lock_after_sleep_checks(qtbot, tab):
+    from PySide6.QtWidgets import QWidget
+
+    changed = []
+    tab.code_changed = changed.append
+    wizard = QWidget()  # (the reset wizard, done: its new code)
+    wizard.new_secret = "918273"
+    tab.wizard = wizard
+    tab.addWidget(wizard)
+    tab._reset_done()
+    assert changed == ["918273"] and tab.wizard is None and "Unlock method changed" in tab.status.text()
+
+
+def test_the_app_hands_new_codes_to_the_lock_after_sleep(qtbot, tmp_path):
+    from gamingcrypt.app import MainWindow
+    from gamingcrypt.unlock.verifier import VerifyUnlocker
+
+    cfg = config()
+    window = MainWindow(cfg, lambda c: None, Volume("x").factory, page_factory=lambda c: {})
+    qtbot.addWidget(window)
+    window.verifier_path = tmp_path / "verifier"
+    window.remember_code(ADMIN_CODE)
+    window.show_shell()
+    settings = window.shell.pages["Settings"]
+    assert settings.code_changed == window.remember_code
+    settings.code_changed("5555")
+    assert VerifyUnlocker(window.verifier).unlock("5555").success
+    assert not VerifyUnlocker(window.verifier).unlock(ADMIN_CODE).success
 
 
 # --- the app -----------------------------------------------------------------------------------

@@ -68,6 +68,39 @@ def test_reboot_into_does_not_restart_when_boot_next_fails():
     assert boot.reboot_into(windows, run, helper="/h", exists=lambda p: False)[1].startswith("Run install.sh")
 
 
+def test_a_restart_that_fails_takes_boot_next_back():
+    """BootNext set, but the restart didn't happen: left as it was, some later restart (or a
+    battery run flat) would start Windows out of the blue."""
+    run, calls = runner_for(codes={"systemctl": 1})
+    windows = boot.parse(LISTING)[1][0]
+    ok, message = boot.reboot_into(windows, run, helper="/h", exists=lambda p: True)
+    assert not ok and calls[-1] == ["sudo", "-n", "/h", "boot-next-clear"]
+    assert "still goes into" not in message
+
+
+def test_a_boot_next_that_cant_be_taken_back_is_said():
+    calls = []
+
+    def run(cmd, **kw):
+        calls.append(cmd)
+        failing = cmd[0] == "systemctl" or cmd[-1] == "boot-next-clear"  # (an old helper doesn't know it)
+        return subprocess.CompletedProcess(cmd, 1 if failing else 0, "", "Error: no" if failing else "")
+
+    windows = boot.parse(LISTING)[1][0]
+    ok, message = boot.reboot_into(windows, run, helper="/h", exists=lambda p: True)
+    assert not ok and "the next start still goes into Windows" in message
+
+
+def test_helper_clears_boot_next(monkeypatch):
+    run, calls = runner_for()
+    assert helper.clear_boot_next(run=run, efibootmgr="/usr/bin/efibootmgr") == 0
+    assert calls == [["/usr/bin/efibootmgr", "--delete-bootnext"]]
+    seen = []
+    monkeypatch.setattr(helper, "clear_boot_next", lambda: seen.append(True) or 0)
+    assert helper.main(["boot-next-clear"]) == 0 and seen == [True]
+    assert helper.HELPER_VERSION >= 4  # new: an older installed helper is reported as outdated
+
+
 def test_power_action_boot(monkeypatch):
     from gamingcrypt.system.session import power_action
 

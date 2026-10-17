@@ -55,6 +55,27 @@ def test_update_available_then_applied(repos):
     assert (tmp / "install-args").read_text().strip() == "--no-sudo"  # no password in the app
 
 
+def test_an_update_whose_install_failed_is_offered_again(repos):
+    """git pull worked, install.sh didn't: the code is new already, so the next check said
+    "Up to date" and the half installed update stayed - it's offered again until it got through."""
+    origin, clone, tmp = repos
+    commit(origin, "gamingcrypt/helper/veracrypt_helper.py", "new helper\n", "helper: boot-next-clear")
+    install = clone / "install.sh"
+    good = install.read_text()
+    git(clone, "update-index", "--assume-unchanged", "install.sh")  # (a local change git leaves alone)
+    install.write_text("#!/bin/sh\necho 'no space left' >&2\nexit 1\n")
+    ok, message, _ = Updater(clone).apply()
+    assert not ok and "no space left" in message
+    info = Updater(clone).check()
+    assert info.available and info.unfinished and info.behind == 0
+    assert info.message == "The last update didn't finish installing - install it again"
+    install.write_text(good)
+    ok, message, root_parts = Updater(clone).apply()
+    assert ok and root_parts == ["gamingcrypt/helper"]  # what the first try pulled still counts
+    info = Updater(clone).check()
+    assert not info.available and info.message == "Up to date"
+
+
 def test_root_parts_need_a_terminal(repos):
     origin, clone, _ = repos
     commit(origin, "gamingcrypt/helper/veracrypt_helper.py", "new helper\n", "helper: boot-next")
@@ -167,3 +188,19 @@ def test_startup_check_notifies(qtbot, monkeypatch):
     window.show()
     window.check_for_update()
     qtbot.waitUntil(lambda: any("Update available (3 changes)" in t for t in window.toasts.shown))
+
+
+def test_startup_says_an_unfinished_update(qtbot, monkeypatch):
+    import copy
+
+    from gamingcrypt.app import MainWindow
+    from gamingcrypt.config import DEFAULTS
+
+    info = UpdateInfo(True, 0, [], upd.UNFINISHED, unfinished=True)
+    monkeypatch.setattr(upd, "Updater", lambda: FakeUpdater(info))
+    window = MainWindow(copy.deepcopy(DEFAULTS), lambda c: None)
+    qtbot.addWidget(window)
+    window.show()
+    window.check_for_update()
+    qtbot.waitUntil(lambda: any("didn't finish installing" in t for t in window.toasts.shown))
+    assert not any("0 changes" in t for t in window.toasts.shown)

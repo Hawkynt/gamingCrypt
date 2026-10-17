@@ -120,7 +120,7 @@ def downloads(root: Path | None) -> list[Download]:
 
 @dataclass
 class InstallProgress:
-    state: str  # "missing", "queued", "downloading", "installed"
+    state: str  # "missing", "queued", "downloading", "paused" (waiting in the queue), "installed"
     downloaded: int = 0
     total: int = 0
 
@@ -187,6 +187,8 @@ def progress(root: Path | None, appid: int) -> InstallProgress:
     _state, flags, done, total = parsed
     if flags == STATE_FULLY_INSTALLED:
         return InstallProgress("installed", done or total, total)
+    if flags & STATE_UPDATE_PAUSED:  # waiting its turn in GamingCrypt's queue (download_queue.py)
+        return InstallProgress("paused", done, total)
     if total > 0:
         return InstallProgress("downloading", done, total)
     return InstallProgress("queued", done, total)

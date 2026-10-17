@@ -125,8 +125,22 @@ def test_surfaces_are_cut_at_45_degrees():
 def test_symbols_keep_their_size_next_to_the_display_font():
     """The display face has no ⏻ ✓ ⌫: the stylesheet names families that have them."""
     assert theme.DISPLAY_FAMILIES[0] == theme.DISPLAY_FONT and len(theme.DISPLAY_FAMILIES) > 2
-    assert 'font-family: "Chakra Petch", "Noto Sans Symbols 2"' in theme.STYLESHEET
+    assert 'font-family: "Chakra Petch", "Noto Sans", "Noto Sans Symbols 2"' in theme.STYLESHEET
     assert sorted(p.name for p in theme.FONTS.glob("*.ttf")) and (theme.FONTS / "OFL.txt").exists()
+
+
+def test_without_the_display_face_titles_keep_their_height(qtbot):
+    """The display face not loaded (yet): the next family is a text face - a symbol font's tall
+    lines pushed the lock screen's buttons below 800 px."""
+    from PySide6.QtWidgets import QLabel
+
+    stack = ", ".join(f'"{family}"' for family in theme.DISPLAY_FAMILIES[1:])  # as if it were missing
+    plain, ours = QLabel("🔒 GamingCrypt"), QLabel("🔒 GamingCrypt")
+    for label, families in ((plain, '"Noto Sans"'), (ours, stack)):
+        label.setStyleSheet(f"font-size: 34px; font-weight: 700; font-family: {families};")
+        qtbot.addWidget(label)
+        label.ensurePolished()
+    assert ours.sizeHint().height() <= plain.sizeHint().height() + 2
 
 
 def test_window_redraws_its_pictures_when_switched(qtbot):

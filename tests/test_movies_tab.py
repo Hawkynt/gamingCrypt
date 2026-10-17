@@ -190,6 +190,26 @@ def test_remove_asks_first_and_takes_cover_and_info_along(qtbot, root):
     assert tab.home.notice.text().startswith("Alien removed")
 
 
+def test_a_failed_removal_stays_on_the_page_and_says_why(qtbot, root, monkeypatch):
+    """It's still there: the page used to close and the error looked like a normal message."""
+    from gamingcrypt.ui import movies_tab
+
+    def fails(*a, **k):
+        raise OSError("Read-only file system")
+
+    monkeypatch.setattr(movies_tab.library, "remove", fails)
+    tab = make_tab(qtbot, root)
+    tab.open_movie(next(m for m in tab.movies if m.title == "Alien"))
+    page = tab.currentWidget()
+    page.options_button.click()
+    page.remove_button.click()
+    page.confirm.remove_button.click()
+    qtbot.waitUntil(lambda: "Read-only" in page.status.text())
+    assert tab.currentWidget() is page and page.confirm is None and page.status.property("error")
+    assert page.status.text() == "Could not remove it: Read-only file system"
+    assert (root / "Alien" / "Alien.mkv").exists() and not tab.home.notice.text()
+
+
 def test_unknown_movies_are_looked_up_in_the_background(qtbot, root):
     put(root, "Blade.Runner.1982.mkv")
     put(root, "Holiday 2019.mp4")

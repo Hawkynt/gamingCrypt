@@ -31,7 +31,12 @@ LOCKABLE = ("Movies", "Shows", "Music", "Pictures")  # tabs the admin can lock f
 
 
 class UserError(ValueError):
-    pass
+    """``step``: the code that was wrong ("admin", "old" - its key in users_page.CodeFlow): only
+    that one is asked again, the others entered before it stay."""
+
+    def __init__(self, message: str, step: str | None = None):
+        super().__init__(message)
+        self.step = step
 
 
 @dataclass(frozen=True)
@@ -142,11 +147,12 @@ def admin_master(config: dict, admin_secret: str, verify=None) -> bytes:
     if isinstance(keyring, dict) and keyring.get("admin"):
         master = keyslots.open_slot(admin_secret, keyring.get("admin"))
         if master is None:
-            raise UserError("That's not the admin's code")
+            raise UserError("That's not the admin's code", step="admin")
         return master
-    if verify is None or not verify(admin_secret):
-        raise UserError("That's not the admin's code" if verify is not None
-                        else "Lock the drive and unlock it once as admin, then try again")
+    if verify is None:
+        raise UserError("Lock the drive and unlock it once as admin, then try again")
+    if not verify(admin_secret):
+        raise UserError("That's not the admin's code", step="admin")
     try:
         password = kdf.derive_password(admin_secret, unlock.get("kdf"))
     except kdf.KDFError as exc:
@@ -404,7 +410,8 @@ class UserUnlocker:
 
     def __init__(self, config: dict, user: User, unlocker_factory):
         self.config, self.user = config, user
-        self.base = unlocker_factory(dict(config["unlock"], kdf=None))  # gets the volume's password itself
+        # gets the volume's password itself (not the admin's code: no key slot to check it with)
+        self.base = unlocker_factory(dict(config["unlock"], kdf=None, keyring=None))
 
     @property
     def configured(self) -> bool:
@@ -421,6 +428,8 @@ class UserUnlocker:
             return UnlockResult(False, str(exc))
         if password is None:
             return UnlockResult(False, "Wrong code")
+        if getattr(self.base, "is_mounted", lambda: False)():
+            return UnlockResult(True, "Volume already mounted")  # (the code opened its key slot: it's right)
         return self.base.unlock(password)
 
 

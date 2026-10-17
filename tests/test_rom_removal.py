@@ -74,6 +74,25 @@ def tab(qtbot, emu):
     return t
 
 
+def test_a_failed_rom_removal_stays_on_the_page_and_says_why(qtbot, tab, emu, monkeypatch):
+    from gamingcrypt.emulation import removal
+
+    def fails(*a, **k):
+        raise OSError("Device or resource busy")
+
+    monkeypatch.setattr(removal, "remove", fails)
+    mario = next(g for g in scan(emu, BY_ID["snes"]) if g.name == "Mario")
+    tab.open_rom(mario)
+    page = tab.currentWidget()
+    page.options_button.click()
+    page.remove_button.click()
+    page.confirm.remove_button.click()
+    page.confirm.keep_button.click()
+    qtbot.waitUntil(lambda: "resource busy" in page.status.text())
+    assert tab.currentWidget() is page and page.confirm is None and page.status.property("error")
+    assert (emu.roms / "snes" / "Mario.sfc").exists() and "removed" not in tab.home.notice.text()
+
+
 def test_remove_from_the_game_page(qtbot, tab, emu):
     from gamingcrypt.ui.emulation_pages import RomGamePage
 

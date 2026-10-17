@@ -112,6 +112,14 @@ class PatternWidget(QWidget):
             return True
         return False
 
+    def gamepad_west(self) -> bool:
+        """X takes the last dot back - as on the 5x5 dots."""
+        if self.nodes:
+            self.nodes.pop()
+            self._error = False
+            self.update()
+        return True
+
     # geometry ---------------------------------------------------------------
     def sizeHint(self) -> QSize:  # noqa: N802 - square, not as wide as the screen
         return QSize(440, 440)
@@ -286,7 +294,8 @@ class DotGridPad(QWidget):
     """5x5 dots: tap them in your secret order, then confirm."""
 
     submitted = Signal(list)
-    HINT = "Ⓐ  Set a dot     Ⓧ  Take the last one back     Ⓑ  Enter"  # (as the hint bar writes them)
+    # (as the hint bar writes them; the same buttons as on the swipe pattern)
+    HINT = "Ⓐ  Set a dot     Ⓧ  Take the last one back     Ⓑ  Clear     Start  Enter"
 
     def __init__(self, size: int = secrets.DOT_GRID_SIZE, parent: QWidget | None = None, hint: bool = False):
         super().__init__(parent)
@@ -323,8 +332,9 @@ class DotGridPad(QWidget):
         layout.addLayout(row, 1)
         layout.addWidget(self.hint)
 
-    # controller: X takes the last dot back, B enters it (with nothing entered yet, B is back as
-    # everywhere)
+    # controller, as on the swipe pattern: X takes the last dot back, B clears (with nothing
+    # entered yet, B is back as everywhere), Start enters - B entered here, so a B meant as
+    # "back" sent half a code and showed an error
     def gamepad_west(self) -> bool:
         self.backspace()
         return True
@@ -332,7 +342,12 @@ class DotGridPad(QWidget):
     def gamepad_back(self) -> bool:
         if not self.nodes:
             return False
-        self.submitted.emit(list(self.nodes))
+        self.clear()
+        return True
+
+    def gamepad_start(self) -> bool:
+        if self.nodes:
+            self.submitted.emit(list(self.nodes))
         return True
 
     def press(self, index: int) -> None:

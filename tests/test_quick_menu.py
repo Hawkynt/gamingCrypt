@@ -184,6 +184,17 @@ def test_menu_shows_current_values(menu):
     assert m.parentWidget().focusWidget() is m.back_button
 
 
+def test_the_volume_slider_follows_the_output(menu):
+    """Speakers at 40 %, HDMI at 80 %: switched to HDMI, the slider shows HDMI's 80 % - it kept
+    showing 40 %, and the first touch set HDMI to about that."""
+    m, audio, *_ = menu
+    m.open_menu(620, "Portal 2")
+    assert m.volume.value() == 40
+    m.output.setCurrentIndex(m.output.findData("hdmi"))
+    assert m.volume.value() == 80 and m.volume_value.text() == "80%"
+    assert not any(call[0] == "volume" for call in audio.calls)  # shown, nothing set
+
+
 def test_menu_without_game_has_no_force_quit(menu):
     m, *_ = menu
     m.open_menu(None)
@@ -455,6 +466,28 @@ def test_the_speed_slider(qtbot, menu):
     assert not m.speed.isEnabled() and "4x" in m.status.text()
     m.set_speed_busy(False)
     assert m.speed.isEnabled() and m.status.text() == ""
+
+
+def test_a_new_speed_says_the_game_starts_again(qtbot, menu):
+    """The new speed is applied by starting the game again after the menu is closed - said while
+    the menu is still open, not a surprise; back at the old speed: nothing to say."""
+    from gamingcrypt.emulation.retroarch import SPEEDS
+
+    m, *_ = menu
+    m.set_emulated(True, 1.0)
+    m.set_in_step(True, False)
+    m.open_menu(0x70000001, "Mario")
+    m.speed.setValue(SPEEDS.index(2.0))
+    assert m.status.text() == "When you go back, the game starts again at 2x - where you are is kept"
+    m.in_step_button.click()
+    assert "at 2x and 60 FPS" in m.status.text()
+    m.in_step_button.click()
+    m.speed.setValue(SPEEDS.index(1.0))
+    assert m.status.text() == ""  # as it runs: nothing changes
+    m.set_emulated(True, 1.0, states=False)  # a core without save states
+    m.open_menu(0x70000001, "Doom")
+    m.speed.setValue(SPEEDS.index(0.5))
+    assert m.status.text() == "0.5x from the next start - this game can't be saved while it runs"
 
 
 def test_state_and_bluetooth_buttons_ask_for_their_pages(menu):

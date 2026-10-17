@@ -242,6 +242,24 @@ def test_a_users_code_unlocks_the_volume():
     assert not result.success and "admin can set one" in result.message
 
 
+def test_a_users_code_on_an_open_drive():
+    """The drive open already: the user's code is checked by their key slot (the drive stays open,
+    VeraCrypt isn't asked) - a wrong code still doesn't get in."""
+    cfg, mia, volume = with_users()
+    seen = []
+
+    def factory(unlock_cfg):
+        seen.append(unlock_cfg)
+        unlocker = volume.factory(unlock_cfg)
+        unlocker.is_mounted = lambda: True
+        return unlocker
+
+    unlocker = users.unlocker_for(cfg, mia, factory)
+    assert unlocker.unlock("14789").success and volume.tried == []
+    assert not unlocker.unlock("12369").success
+    assert seen[0]["keyring"] is None  # its base gets the volume's password, not the admin's code
+
+
 def test_users_are_kept_next_to_a_container_file(tmp_path):
     from gamingcrypt.unlock import sidecar
 

@@ -220,7 +220,8 @@ def test_dot_grid_buttons_keep_away_from_the_dots(qtbot):
 
 
 def test_dot_grid_with_the_controller_buttons(qtbot):
-    """X takes the last dot back, B enters - with nothing entered B is back."""
+    """The same buttons as on the swipe pattern: X takes the last dot back, B clears (with nothing
+    entered B is back), Start enters - a B meant as "back" no longer sends half a code."""
     from gamingcrypt.input import evdev as e
     from gamingcrypt.ui.navigator import GamepadNavigator
     from gamingcrypt.ui.secret_input import DotGridPad
@@ -245,9 +246,40 @@ def test_dot_grid_with_the_controller_buttons(qtbot):
     assert len(host.nodes) == 3
     press(e.BTN_NORTH)  # X (xpad layout: the left button)
     assert len(host.nodes) == 2 and host.display.text() == "●●"
+    sent = []
+    host.submitted.connect(sent.append)
+    press(e.BTN_EAST)  # B: cleared, nothing sent
+    assert host.nodes == [] and host.display.text() == "" and sent == [] and backs == [True]
+    press(e.BTN_SOUTH)
+    press(e.BTN_SOUTH)
     with qtbot.waitSignal(host.submitted) as blocker:
-        press(e.BTN_EAST)
+        press(e.BTN_START)
     assert len(blocker.args[0]) == 2 and backs == [True]
+
+
+def test_swipe_pattern_with_the_same_controller_buttons(qtbot):
+    from gamingcrypt.input import evdev as e
+    from gamingcrypt.ui.navigator import GamepadNavigator
+    from gamingcrypt.ui.secret_input import PatternWidget
+
+    from PySide6.QtWidgets import QVBoxLayout, QWidget
+
+    window = QWidget()
+    pattern = PatternWidget()
+    QVBoxLayout(window).addWidget(pattern)
+    qtbot.addWidget(window)
+    window.show()
+    nav = GamepadNavigator(window)
+    nav.focus(pattern)
+    press = lambda code: (nav.on_event(e.EV_KEY, code, 1), nav.on_event(e.EV_KEY, code, 0))  # noqa: E731
+    for dx, dy in ((0, 0), (1, 0), (0, 1)):  # (the cursor starts in the middle)
+        pattern.gamepad_direction(dx, dy) if dx or dy else None
+        press(e.BTN_SOUTH)  # A: a dot
+    assert pattern.nodes == [4, 5, 8]
+    press(e.BTN_NORTH)  # X: the last one back
+    assert pattern.nodes == [4, 5]
+    press(e.BTN_EAST)  # B: cleared
+    assert pattern.nodes == []
 
 
 def test_the_lock_screen_shows_the_controller_buttons_of_the_dots(qtbot):
@@ -267,7 +299,8 @@ def test_the_lock_screen_shows_the_controller_buttons_of_the_dots(qtbot):
     qtbot.waitExposed(window)
     qtbot.wait(50)
     pad = screen.input.widget
-    assert pad.hint.isVisible() and "Ⓧ  Take the last one back" in pad.hint.text() and "Ⓑ  Enter" in pad.hint.text()
+    assert pad.hint.isVisible() and "Ⓧ  Take the last one back" in pad.hint.text() and "Ⓑ  Clear" in pad.hint.text()
+    assert "Start  Enter" in pad.hint.text()
     bottom = lambda w: w.mapTo(window, w.rect().bottomLeft()).y()  # noqa: E731
     assert bottom(pad.hint) < bottom(screen.shutdown_button) <= 800  # all on the screen
     assert bottom(pad.canvas) < pad.hint.mapTo(window, pad.hint.rect().topLeft()).y()  # below the dots

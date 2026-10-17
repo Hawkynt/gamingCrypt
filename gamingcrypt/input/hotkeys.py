@@ -36,11 +36,20 @@ class Binding:
     codes: tuple[int, ...]
     device: str = ""  # keyboard-like device it came from (for install.sh's access rule)
 
-    def describe(self) -> str:
+    def parts(self) -> list[str]:
+        """The buttons' names, as on the device ("Windows", "Volume Down" / "Guide", "View")."""
         names = PAD_NAMES if self.source == PAD else KEY_NAMES
-        parts = [names.get(c, f"{'Button' if self.source == PAD else 'Key'} {c}") for c in self.codes]
-        text = " + ".join(parts)
+        return [names.get(c, f"{'Button' if self.source == PAD else 'Key'} {c}") for c in self.codes]
+
+    def describe(self) -> str:
+        text = " + ".join(self.parts())
         return f"{text} (controller)" if self.source == PAD else text
+
+    def how_to(self) -> str:
+        """For hints, in the words of the device it's on: "press Guide", "hold Windows and press
+        Volume Down" - not a Windows button a Steam Deck hasn't got."""
+        first, *second = self.parts()
+        return f"hold {first} and press {second[0]}" if second else f"press {first}"
 
     def to_dict(self) -> dict:
         return {"source": self.source, "codes": list(self.codes), "device": self.device}

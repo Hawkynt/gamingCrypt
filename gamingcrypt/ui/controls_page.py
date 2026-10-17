@@ -153,7 +153,7 @@ class ControlsPage(QWidget):
         self.system_combo.currentIndexChanged.connect(lambda _i: self.refresh(rebuild=True))
         top.addWidget(self.system_combo)
         self.reset_button = big_button("Default layout")
-        self.reset_button.clicked.connect(self.reset_layout)
+        self.reset_button.clicked.connect(self.ask_reset_layout)
         top.addWidget(self.reset_button)
         self.done_button = big_button("Done", "primary")
         self.done_button.clicked.connect(self.close_page)
@@ -273,6 +273,14 @@ class ControlsPage(QWidget):
         return True  # nothing navigates while waiting for the button
 
     # page ---------------------------------------------------------------------------------------
+    def ask_reset_layout(self) -> None:
+        from gamingcrypt.ui.modal import ask
+
+        self.stop_scan()
+        name = self.system_combo.currentText() or "this console"
+        ask(self, f"Back to the default layout for {name}?\nEvery button you changed for it is undone.",
+            "Default layout", self.reset_layout)
+
     def reset_layout(self) -> None:
         self.stop_scan()
         self.store.reset(self.system)

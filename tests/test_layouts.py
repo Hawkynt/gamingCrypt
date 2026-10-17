@@ -96,7 +96,12 @@ def test_change_a_button_for_a_system(qtbot, page):
     assert page._saved[-1]["input"]["layouts"]["snes"] == {"x": "A"}
     assert page.schematic.labels["x"] == "A" and page.reset_button.isVisible()
     assert page.schematic.value_text("x").startswith("A  ·  X")
-    page.reset_button.click()
+    from gamingcrypt.ui.modal import open_modal
+
+    page.reset_button.click()  # asks first: every change for the console is undone
+    modal = open_modal(page.window())
+    assert "default layout" in modal.content.question.text() and page._cfg["input"]["layouts"]["snes"]
+    modal.content.action_button.click()
     assert "snes" not in page._cfg["input"]["layouts"] and page.schematic.labels["x"] == "Y"
 
 

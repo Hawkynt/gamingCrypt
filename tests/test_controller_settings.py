@@ -149,6 +149,27 @@ def test_reset_to_defaults(qtbot):
     assert page.profile.calibration == {} and PAD.key not in cfg["input"]["profiles"]
 
 
+def test_reset_asks_and_says_what_it_reset(qtbot):
+    """Mapping, calibration and dead zone are all gone after it: asked first, and all three said."""
+    from PySide6.QtWidgets import QPushButton
+
+    from gamingcrypt.ui.modal import open_modal
+
+    page, service, cfg, saved, _ = make(qtbot)
+    page.show()
+    page.deadzone_slider.setValue(15)
+    button = next(b for b in page.findChildren(QPushButton) if b.text() == "Reset to defaults")
+    button.click()
+    modal = open_modal(page.window())
+    question = modal.content.question.text()
+    assert "mapping" in question and "calibration" in question and "dead zone" in question
+    modal.content.cancel_button.click()
+    assert page.profile.deadzone == 0.15  # cancelled: nothing reset
+    button.click()
+    open_modal(page.window()).content.action_button.click()
+    assert PAD.key not in cfg["input"]["profiles"] and "dead zone" in page.buttons.status.text()
+
+
 def test_enable_toggle(qtbot):
     page, service, cfg, saved, remappers = make(qtbot)
     page.enable_button.click()
