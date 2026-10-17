@@ -1869,7 +1869,8 @@ class MainWindow(QMainWindow):
                                                  steam_service=getattr(games, "service", None),
                                                  input_service=self.input_service,
                                                  restart_gaming=self.restart_gaming_mode,
-                                                 admin_check=self.is_admin_code))
+                                                 admin_check=self.is_admin_code,
+                                                 code_changed=self.remember_code))
         service = getattr(games, "service", None)
         if service is not None:
             # Steam windows (store, Steam's own dialogs) would open *behind* the fullscreen launcher.

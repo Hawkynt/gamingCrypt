@@ -167,6 +167,71 @@ def test_a_user_sees_only_themselves_and_changes_their_own_code(qtbot):
     assert users.volume_password(cfg, mia.id, "3333") and users.volume_password(cfg, mia.id, "1111") is None
 
 
+def test_a_changed_code_is_the_one_the_lock_after_sleep_checks(qtbot):
+    """Whoever is logged in changes their own code: the lock after sleep must take the new one
+    (it kept checking the old one). Another user's new code doesn't touch it."""
+    from gamingcrypt.ui.settings_tab import SettingsTab
+
+    cfg = config()
+    master = users.admin_master(cfg, ADMIN_CODE, verify)
+    mia = users.add(cfg, "Mia", "pin", "1111", master)
+    users.enter(cfg, mia.id)
+    changed = []
+    tab = SettingsTab(cfg, lambda c: None, system=SystemControls(), code_changed=changed.append)
+    qtbot.addWidget(tab)
+    tab.show()
+    tab.users_section.rows[mia.id]["code"].click()
+    flow = tab.currentWidget()
+    flow.input.secret_entered.emit("1111")
+    enter_new(flow, "pin", "3333")
+    qtbot.waitUntil(lambda: tab.currentWidget() is tab.overview, timeout=10000)
+    assert changed == ["3333"]
+
+
+def test_the_admin_giving_someone_a_code_keeps_the_admins_check(qtbot, tab):
+    changed = []
+    tab.users_section.code_changed = changed.append
+    add(qtbot, tab, "Mia", "pin", "1111")
+    qtbot.waitUntil(lambda: tab.currentWidget() is tab.overview, timeout=10000)
+    mia = users.all_users(tab.config)[1]
+    tab.users_section.rows[mia.id]["code"].click()
+    flow = tab.currentWidget()
+    enter_new(flow, "pin", "2222")
+    flow.input.secret_entered.emit(ADMIN_CODE)
+    qtbot.waitUntil(lambda: tab.currentWidget() is tab.overview, timeout=10000)
+    assert changed == []  # Mia's code: the admin still unlocks with their own
+
+
+def test_the_admins_new_drive_code_is_the_one_the_lock_after_sleep_checks(qtbot, tab):
+    from PySide6.QtWidgets import QWidget
+
+    changed = []
+    tab.code_changed = changed.append
+    wizard = QWidget()  # (the reset wizard, done: its new code)
+    wizard.new_secret = "918273"
+    tab.wizard = wizard
+    tab.addWidget(wizard)
+    tab._reset_done()
+    assert changed == ["918273"] and tab.wizard is None and "Unlock method changed" in tab.status.text()
+
+
+def test_the_app_hands_new_codes_to_the_lock_after_sleep(qtbot, tmp_path):
+    from gamingcrypt.app import MainWindow
+    from gamingcrypt.unlock.verifier import VerifyUnlocker
+
+    cfg = config()
+    window = MainWindow(cfg, lambda c: None, Volume("x").factory, page_factory=lambda c: {})
+    qtbot.addWidget(window)
+    window.verifier_path = tmp_path / "verifier"
+    window.remember_code(ADMIN_CODE)
+    window.show_shell()
+    settings = window.shell.pages["Settings"]
+    assert settings.code_changed == window.remember_code
+    settings.code_changed("5555")
+    assert VerifyUnlocker(window.verifier).unlock("5555").success
+    assert not VerifyUnlocker(window.verifier).unlock(ADMIN_CODE).success
+
+
 # --- the app -----------------------------------------------------------------------------------
 
 def test_logging_in_as_a_user_and_locking_again(qtbot, tmp_path):
