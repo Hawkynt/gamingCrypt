@@ -92,7 +92,7 @@ def test_covers_without_artwork_follow_the_theme():
     assert other.hue() != light.hue()  # every title its own colour
 
 
-def test_covers_have_rounded_corners(qtbot):
+def test_covers_have_two_corners_cut(qtbot):
     from PySide6.QtGui import QPixmap
 
     from gamingcrypt.ui.game_widgets import Cover
@@ -106,7 +106,27 @@ def test_covers_have_rounded_corners(qtbot):
     cover.show()
     image = cover.grab().toImage()
     assert QColor(image.pixel(50, 75)).red() > 200  # the picture
-    assert QColor(image.pixel(0, 0)).green() > 100  # but not in the rounded-off corner
+    assert QColor(image.pixel(0, 0)).green() > 100  # but not in the cut-off corners
+    assert QColor(image.pixel(99, 149)).green() > 100
+    assert QColor(image.pixel(99, 0)).red() > 200 and QColor(image.pixel(0, 149)).red() > 200  # the square ones
+
+
+def test_surfaces_are_cut_at_45_degrees():
+    """Top-left and bottom-right cut off, the other two corners square - drawn as a 9-slice."""
+    assert theme.cut_points(0, 0, 100, 50, 10) == [(10, 0), (100, 0), (100, 40), (90, 50), (0, 50), (0, 10)]
+    rule = theme.box("card", "#123456")
+    path = rule.split("url(")[1].split(")")[0]
+    svg = open(path).read()
+    assert "#123456" in svg and f"border-width: {theme.SLICE['card']}px;" in rule
+    assert theme.box("card", "#123456") == rule  # one file per look
+    assert "polyline" in open(theme.box("card", "#000", "#fff", 3, glow=True).split("url(")[1].split(")")[0]).read()
+
+
+def test_symbols_keep_their_size_next_to_the_display_font():
+    """The display face has no ⏻ ✓ ⌫: the stylesheet names families that have them."""
+    assert theme.DISPLAY_FAMILIES[0] == theme.DISPLAY_FONT and len(theme.DISPLAY_FAMILIES) > 2
+    assert 'font-family: "Chakra Petch", "Noto Sans Symbols 2"' in theme.STYLESHEET
+    assert sorted(p.name for p in theme.FONTS.glob("*.ttf")) and (theme.FONTS / "OFL.txt").exists()
 
 
 def test_window_redraws_its_pictures_when_switched(qtbot):
@@ -164,5 +184,8 @@ def test_text_size_in_settings(qtbot):
 
 def test_the_tab_rows_keep_their_size():
     """They must fit the 1280 px screen - with every text size."""
+    import re
+
     theme.apply("dark", size="larger")
-    assert "padding: 16px 20px;\n    font-size: 22px;" in theme.STYLESHEET  # QPushButton#tab
+    rule = re.search(r"QPushButton#tab \{[^}]*\}", theme.STYLESHEET).group(0)
+    assert "font-size: 22px;" in rule and f"padding: {16 - theme.SLICE['tab']}px {20 - theme.SLICE['tab']}px;" in rule

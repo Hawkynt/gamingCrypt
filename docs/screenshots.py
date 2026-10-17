@@ -116,6 +116,7 @@ def main() -> None:
         window.resize(*SIZE)
         window.show()
         window.show_shell()
+        window.activateWindow()  # the controller highlight shows where the focus is
         pump(800)
         shell = window.shell
         games = pages["Games"]
@@ -126,18 +127,23 @@ def main() -> None:
             window.grab().save(str(OUT / f"{file}.png"))
 
         suffix = "" if name == "dark" else "-light"
+        games.home.steam_card.setFocus()  # the controller's highlight
         shot(f"games{suffix}")
+        games.open_steam()
+        shot(f"steam{suffix}")
+        games.back()
+        games.open_game(1)
+        shot(f"detail{suffix}")
+        games.back()
         if name == "light":
             shell.show_tab("Settings")
             shot("settings-light")
+            shell.show_tab("Games")
+            window.toggle_quick_menu()
+            shot("quickmenu-light")
+            window.quick_menu.close_menu()
             window.close()
             break
-        games.open_steam()
-        shot("steam")
-        games.back()
-        games.open_game(1)
-        shot("detail")
-        games.back()
         shell.show_tab("Movies")
         shot("movies")
         movie_tab = pages["Movies"]
@@ -160,18 +166,21 @@ def main() -> None:
         window.quick_menu.close_menu()
         window.close()
 
-    theme.apply("dark", app)
     from gamingcrypt.ui.auth_setup import AuthSetupWizard
     from gamingcrypt.ui.lock_screen import LockScreen
     from tests.test_lock_screen import FakeUnlocker
 
-    for method, file in (("password", "lock"), ("grid5", "grid5"), ("pattern", "pattern")):
+    for look, method, file in (("dark", "password", "lock"), ("dark", "grid5", "grid5"), ("dark", "pattern", "pattern"),
+                               ("light", "pin", "pin-light")):
+        theme.apply(look, app)
         screen = LockScreen(FakeUnlocker(), method)
         screen.resize(*SIZE)
         screen.show()
+        screen.activateWindow()
         pump(400)
         screen.grab().save(str(OUT / f"{file}.png"))
         screen.close()
+    theme.apply("dark", app)
     config = copy.deepcopy(DEFAULTS)
     wizard = AuthSetupWizard(config, lambda c: None, lambda c: FakeUnlocker(), first_start=True)
     wizard.resize(*SIZE)

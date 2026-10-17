@@ -114,9 +114,10 @@ def test_focused_play_button_is_clearly_highlighted(qtbot):
     for name in theme.THEMES:
         theme.apply(name)
         css = theme.STYLESHEET
-        assert (f"QPushButton#primary:focus {{ background: {theme.ACCENT_HI}; border-color: {theme.FOCUS}; }}"
-                in css)
-        assert f"QPushButton:focus {{ border-color: {theme.ACCENT}; }}" in css
+        ring = theme.box("button", theme.ACCENT_HI, theme.FOCUS, theme.RING, glow=True)
+        assert f"QPushButton#primary:focus {{ {ring} }}" in css
+        ring = theme.box("button", theme.SURFACE_HI, theme.ACCENT, theme.RING, glow=True)
+        assert f"QPushButton:focus {{ {ring} }}" in css
         assert theme.FOCUS != theme.ACCENT_HI
     theme.apply(theme.DEFAULT)
 

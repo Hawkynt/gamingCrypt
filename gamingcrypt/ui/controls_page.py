@@ -29,7 +29,8 @@ HINT = "Select a button of the {name} controller, then press the button on your 
 
 def _button_style(color: str | None, w: int, h: int) -> str:
     radius = min(w, h) // 2
-    return (f"QPushButton {{ background: {color or '#3a4152'}; color: {theme.TEXT}; border-radius: {radius}px; "
+    return (f"QPushButton {{ border-image: none; background: {color or '#3a4152'}; color: {theme.TEXT}; "
+            f"border-radius: {radius}px; "
             f"border: 4px solid transparent; padding: 0; font-weight: bold; }}"
             f"QPushButton:focus {{ border: 4px solid {theme.TEXT}; }}"
             f"QPushButton[scanning=\"true\"] {{ border: 4px solid {theme.ACCENT}; background: {theme.ACCENT}; }}")

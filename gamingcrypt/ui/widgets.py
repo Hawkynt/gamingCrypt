@@ -193,7 +193,10 @@ class OnScreenKeyboard(QWidget):
         self.dismissable = False
         self._dismisser: _TapOutsideDismisser | None = None
         if compact:
-            self.setStyleSheet("QPushButton#key { min-height: 42px; padding: 2px; }")
+            from gamingcrypt.ui import theme
+
+            # 2 px around the text, as on the big keys (theme.py: the 9-slice border holds the rest)
+            self.setStyleSheet(f"QPushButton#key {{ min-height: 42px; padding: {5 - theme.SLICE['key']}px; }}")
         self._shift = False
         self._symbols = False
         self._letter_buttons: list[QPushButton] = []

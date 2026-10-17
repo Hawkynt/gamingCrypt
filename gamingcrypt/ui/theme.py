@@ -1,12 +1,19 @@
-"""Colours and the global Qt stylesheet - a dark and a light theme. Everything is sized for fingers.
+"""Colours, shapes and the global Qt stylesheet - a dark and a light theme. Everything is sized for fingers.
 
 The colours are module attributes (``theme.ACCENT``…) read when something is drawn; apply()
 switches them, rebuilds STYLESHEET and tells whoever listens (pictures drawn once, e.g. covers
 without artwork, are drawn again).
+
+The shape: top-left and bottom-right corners cut off at 45°, the other two square - on buttons,
+cards, fields and covers alike. Qt stylesheets can only round corners, so every surface is a small
+SVG drawn as a 9-slice ``border-image`` (box()); its corners never stretch, its edges do. The
+highlight (controller focus) is an outline along the cut, with both cut edges lit up thicker.
 """
 
 from __future__ import annotations
 
+import hashlib
+import math
 from pathlib import Path
 from typing import Callable
 
@@ -16,70 +23,203 @@ DEFAULT = "dark"
 TEXT_SIZES = {"normal": ("Normal", 1.0), "large": ("Large", 1.15), "larger": ("Larger", 1.3)}
 text_size = "normal"
 
+DISPLAY_FONT = "Chakra Petch"  # titles, tabs, buttons (bundled in fonts/, SIL Open Font License)
+# ... it has no symbols (⏻ ✓ ⌫ ⚙): those come from the next family that has them, not from
+# whatever the system falls back to (often a small monospace one)
+DISPLAY_FAMILIES = [DISPLAY_FONT, "Noto Sans Symbols 2", "Noto Sans Symbols", "Noto Sans", "DejaVu Sans"]
+FONTS = Path(__file__).resolve().parent / "fonts"
+
 PALETTES = {
     "dark": {
-        "BG": "#0e1016",
-        "SURFACE": "#181b23",  # cards, bars
-        "SURFACE_HI": "#232733",  # buttons, fields, focused cards
-        "SURFACE_HOVER": "#2c3140",
-        "BORDER": "#2c313d",
-        "CARD_EDGE": "#181b23",  # cards need no edge on the dark background
-        "TEXT": "#eef0f5",
-        "TEXT_DIM": "#959cab",
-        "ACCENT": "#4f8cff",
-        "ACCENT_HI": "#6f9fff",
-        "ACCENT_SOFT": "#1f2c48",
-        "ON_ACCENT": "#ffffff",
-        "FOCUS": "#ffffff",  # the ring on blue buttons
-        "DANGER": "#e5484d",
-        "DANGER_HI": "#f06367",
-        "SUCCESS": "#3fb950",
-        "SCRIM": "rgba(5, 7, 12, 190)",
+        "BG": "#0f1013",
+        "SURFACE": "#191b20",  # cards, bars
+        "SURFACE_HI": "#24272e",  # buttons, fields, focused cards
+        "SURFACE_HOVER": "#2d3139",
+        "BORDER": "#32363f",
+        "CARD_EDGE": "#191b20",  # cards need no edge on the dark background
+        "TEXT": "#f1f3f6",
+        "TEXT_DIM": "#8f96a4",
+        "ACCENT": "#36c5ff",
+        "ACCENT_HI": "#6fd6ff",
+        "ACCENT_SOFT": "#0f2b3b",
+        "ON_ACCENT": "#03131d",  # dark text on the bright cyan
+        "FOCUS": "#ffffff",  # the ring on cyan buttons
+        "DANGER": "#f55050",
+        "DANGER_HI": "#ff6b6b",
+        "SUCCESS": "#3ddc84",
+        "ON_SUCCESS": "#03140b",
+        "SCRIM": "rgba(4, 5, 8, 200)",
     },
     "light": {
-        "BG": "#eef0f4",
+        "BG": "#e8ebf0",
         "SURFACE": "#ffffff",
-        "SURFACE_HI": "#e6e9f0",
-        "SURFACE_HOVER": "#dce1ea",
-        "BORDER": "#d3d8e1",
-        "CARD_EDGE": "#e1e5ec",
-        "TEXT": "#161922",
-        "TEXT_DIM": "#5c6474",
-        "ACCENT": "#2f6fec",
-        "ACCENT_HI": "#4a82f0",
-        "ACCENT_SOFT": "#dce7fd",
+        "SURFACE_HI": "#dfe3ea",
+        "SURFACE_HOVER": "#d3d9e2",
+        "BORDER": "#c3cad5",
+        "CARD_EDGE": "#dbe0e8",
+        "TEXT": "#10131a",
+        "TEXT_DIM": "#566070",
+        "ACCENT": "#0076c9",
+        "ACCENT_HI": "#1b8ad9",
+        "ACCENT_SOFT": "#d4e9f9",
         "ON_ACCENT": "#ffffff",
-        "FOCUS": "#161922",
-        "DANGER": "#d63a40",
-        "DANGER_HI": "#e4575c",
-        "SUCCESS": "#1e9b4b",
-        "SCRIM": "rgba(20, 24, 34, 120)",
+        "FOCUS": "#10131a",
+        "DANGER": "#d8383b",
+        "DANGER_HI": "#e65558",
+        "SUCCESS": "#14864a",
+        "ON_SUCCESS": "#ffffff",
+        "SCRIM": "rgba(16, 20, 30, 130)",
     },
 }
 
+# the cut (px along each edge) and the 9-slice border it sits in - per kind of surface
+CUT = {"card": 16, "button": 10, "field": 10, "key": 7, "pin": 16, "tab": 8, "cover": 10}
+SLICE = {"card": 30, "button": 24, "field": 24, "key": 10, "pin": 30, "tab": 12}  # room for the glow
+RING = 3  # the highlight's outline
+GLOW = 6  # ... and its cut edges
+
 current = DEFAULT
 BG = SURFACE = SURFACE_HI = SURFACE_HOVER = BORDER = CARD_EDGE = TEXT = TEXT_DIM = ""
-ACCENT = ACCENT_HI = ACCENT_SOFT = ON_ACCENT = FOCUS = DANGER = DANGER_HI = SUCCESS = SCRIM = ""
+ACCENT = ACCENT_HI = ACCENT_SOFT = ON_ACCENT = FOCUS = DANGER = DANGER_HI = SUCCESS = ON_SUCCESS = SCRIM = ""
 STYLESHEET = ""
 _listeners: list[Callable[[], None]] = []
+_fonts_loaded = False
 
 
-def _chevron(color: str) -> str:
-    """The drop-down arrow, in the theme's colour (Qt stylesheets need a file)."""
+def _icon_folder() -> Path:
     import tempfile
 
     folder = Path(tempfile.gettempdir()) / "gamingcrypt-icons"
     folder.mkdir(exist_ok=True)
-    path = folder / f"chevron-{color.lstrip('#')}.svg"
+    return folder
+
+
+def _svg_file(prefix: str, svg: str) -> str:
+    """A picture for the stylesheet (Qt stylesheets need a file) - one per look, written once."""
+    path = _icon_folder() / f"{prefix}-{hashlib.md5(svg.encode()).hexdigest()[:12]}.svg"
     if not path.exists():
-        path.write_text(f'<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">'
-                        f'<path d="M6 9l6 6 6-6" fill="none" stroke="{color}" stroke-width="2.6" '
-                        f'stroke-linecap="round" stroke-linejoin="round"/></svg>')
+        path.write_text(svg)
     return path.as_posix()
+
+
+def _chevron(color: str) -> str:
+    """The drop-down arrow, in the theme's colour."""
+    return _svg_file("chevron", f'<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">'
+                                f'<path d="M5 9l7 7 7-7" fill="none" stroke="{color}" stroke-width="2.6" '
+                                f'stroke-linecap="square" stroke-linejoin="miter"/></svg>')
+
+
+def cut_points(x: float, y: float, w: float, h: float, cut: float) -> list[tuple[float, float]]:
+    """The outline: top-left and bottom-right cut off, the other corners square."""
+    cut = max(0.0, min(cut, w / 2, h / 2))
+    return [(x + cut, y), (x + w, y), (x + w, y + h - cut), (x + w - cut, y + h), (x, y + h), (x, y + cut)]
+
+
+def cut_path(rect, cut: float):
+    """cut_points() as a QPainterPath - for whatever is painted (covers, badges, pattern dots)."""
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QPainterPath, QPolygonF
+
+    path = QPainterPath()
+    path.addPolygon(QPolygonF([QPointF(px, py) for px, py in cut_points(rect.x(), rect.y(), rect.width(),
+                                                                         rect.height(), cut)]))
+    path.closeSubpath()
+    return path
+
+
+def _inset(size: float, cut: float, d: float) -> str:
+    """cut_points() of a size×size square moved ``d`` inwards (where a stroke of 2·d is centred)."""
+    k = cut + d * (math.sqrt(2) - 1)  # the cut edges move inwards along their own normal
+    pts = [(k, d), (size - d, d), (size - d, size - k), (size - k, size - d), (d, size - d), (d, k)]
+    return " ".join(f"{px:.2f},{py:.2f}" for px, py in pts)
+
+
+def box(kind: str, fill: str, stroke: str | None = None, width: float = 0, glow: bool = False) -> str:
+    """The stylesheet lines that draw a cut-corner surface: ``fill`` inside, an optional
+    ``stroke`` along the edge, and with ``glow`` the cut edges lit up (the highlight)."""
+    cut, s = CUT[kind], SLICE[kind]
+    size = 2 * s + 8  # the middle 8 px stretch
+    parts = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 {size} {size}">']
+    if stroke and width:
+        parts.append(f'<polygon points="{_inset(size, cut, width / 2)}" fill="{fill}" stroke="{stroke}" '
+                     f'stroke-width="{width}" stroke-linejoin="miter" stroke-miterlimit="4"/>')
+    else:
+        parts.append(f'<polygon points="{_inset(size, cut, 0)}" fill="{fill}"/>')
+    if glow and stroke:
+        d = GLOW / 2
+        k = cut + d * (math.sqrt(2) - 1)
+        arm = min(s - k - 1, cut)  # a bracket: the cut edge and a little of both sides (in the corner slice)
+        for a, b, c, e in (((k + arm, d), (k, d), (d, k), (d, k + arm)),
+                           ((size - k - arm, size - d), (size - k, size - d), (size - d, size - k),
+                            (size - d, size - k - arm))):
+            line = " ".join(f"{px:.2f},{py:.2f}" for px, py in (a, b, c, e))
+            parts.append(f'<polyline points="{line}" fill="none" stroke="{stroke}" stroke-width="{GLOW}" '
+                         f'stroke-linejoin="miter" stroke-linecap="butt"/>')
+    parts.append("</svg>")
+    path = _svg_file(kind, "".join(parts))
+    return f"border-image: url({path}) {s} {s} {s} {s} stretch stretch; border-width: {s}px;"
+
+
+def tab_marker(color: str, fill: str = "transparent") -> str:
+    """The open tab's mark: a bar along the bottom with its ends cut like the corners (and the
+    controller's box behind it, if ``fill``)."""
+    s, cut = SLICE["tab"], CUT["tab"]
+    size = 2 * s + 8
+    bar = 4
+    parts = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 {size} {size}">']
+    if fill != "transparent":
+        parts.append(f'<polygon points="{_inset(size, cut, 0)}" fill="{fill}"/>')
+    parts.append(f'<polygon points="{bar},{size - bar} {size},{size - bar} {size - bar},{size} 0,{size}" fill="{color}"/>')
+    parts.append("</svg>")
+    path = _svg_file("tab", "".join(parts))
+    return f"border-image: url({path}) {s} {s} {s} {s} stretch stretch; border-width: {s}px;"
+
+
+def _handle(fill: str, stroke: str | None = None) -> str:
+    """The slider's knob: a small cut square."""
+    size, cut = 30, 9
+    edge = f' stroke="{stroke}" stroke-width="3"' if stroke else ""
+    d = 1.5 if stroke else 0
+    svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 {size} {size}">'
+           f'<polygon points="{_inset(size, cut, d)}" fill="{fill}"{edge}/></svg>')
+    return _svg_file("knob", svg)
+
+
+def load_fonts() -> None:
+    """The display face (needs a running QGuiApplication; without one nothing happens)."""
+    global _fonts_loaded
+    if _fonts_loaded:
+        return
+    from PySide6.QtGui import QFontDatabase, QGuiApplication
+
+    if QGuiApplication.instance() is None:
+        return
+    for file in sorted(FONTS.glob("*.ttf")):
+        QFontDatabase.addApplicationFont(str(file))
+    _fonts_loaded = True
+
+
+def display_font(pixels: int, weight: int = 700):
+    """A QFont in the display face - for titles drawn by hand (cover initials)."""
+    from PySide6.QtGui import QFont
+
+    load_fonts()
+    font = QFont()
+    font.setFamilies(DISPLAY_FAMILIES)
+    font.setPixelSize(pixels)
+    font.setWeight(QFont.Weight(weight))
+    return font
 
 
 def stylesheet(c: dict) -> str:
     chevron = _chevron(c["TEXT_DIM"])
+    display = "font-family: " + ", ".join(f'"{family}"' for family in DISPLAY_FAMILIES)
+
+    def pad(kind: str, vertical: int, horizontal: int) -> str:
+        """The padding that keeps the old room around the text inside the (wider) 9-slice border."""
+        s = SLICE[kind]
+        return f"padding: {vertical - s}px {horizontal - s}px;"
+
     return f"""
 QWidget {{
     background: {c['BG']};
@@ -87,107 +227,118 @@ QWidget {{
     font-size: 20px;
 }}
 QLabel {{ background: transparent; }}
-QLabel#title {{ font-size: 34px; font-weight: 700; }}
+QLabel#title {{ font-size: 34px; font-weight: 700; {display}; }}
 QLabel#subtitle {{ font-size: 20px; color: {c['TEXT_DIM']}; }}
 QLabel#status {{ font-size: 19px; color: {c['TEXT_DIM']}; }}
 QLabel#status[error="true"] {{ color: {c['DANGER']}; }}
-QLabel#comingSoon {{ font-size: 34px; color: {c['TEXT_DIM']}; }}
-QLabel#cardTitle {{ font-size: 20px; font-weight: 600; }}
+QLabel#comingSoon {{ font-size: 34px; color: {c['TEXT_DIM']}; {display}; }}
+QLabel#cardTitle {{ font-size: 21px; font-weight: 600; {display}; }}
 QLabel#cardMeta {{ font-size: 16px; color: {c['TEXT_DIM']}; }}
-QLabel#detailTitle {{ font-size: 34px; font-weight: 700; }}
+QLabel#detailTitle {{ font-size: 36px; font-weight: 700; {display}; }}
 QLabel#detailMeta {{ font-size: 19px; color: {c['TEXT_DIM']}; }}
-QLabel#section {{ font-size: 24px; font-weight: 700; }}
-QLabel#sourceTitle {{ font-size: 26px; font-weight: 700; }}
+QLabel#section {{ font-size: 25px; font-weight: 700; {display}; }}
+QLabel#sourceTitle {{ font-size: 27px; font-weight: 700; {display}; }}
 
-/* buttons: the focus ring's room is always there (transparent), so focusing never moves text */
+/* buttons: the focus ring's room is always there (in the 9-slice border), so focusing never moves text */
 QPushButton {{
-    background: {c['SURFACE_HI']};
+    background: transparent;
     color: {c['TEXT']};
-    border: 3px solid transparent;
-    border-radius: 14px;
-    padding: 10px 22px;
+    {box('button', c['SURFACE_HI'])}
+    {pad('button', 13, 25)}
     min-height: 42px;
     font-size: 21px;
+    font-weight: 600;
+    {display};
 }}
-QPushButton:hover {{ background: {c['SURFACE_HOVER']}; }}
-QPushButton:pressed, QPushButton:checked {{ background: {c['ACCENT']}; color: {c['ON_ACCENT']}; }}
-QPushButton:disabled {{ color: {c['TEXT_DIM']}; background: {c['SURFACE']}; }}
-QPushButton:focus {{ border-color: {c['ACCENT']}; }}
-QPushButton:checked:focus {{ border-color: {c['FOCUS']}; }}
-QPushButton#primary {{ background: {c['ACCENT']}; color: {c['ON_ACCENT']}; font-weight: 700; }}
-QPushButton#primary:hover, QPushButton#primary:pressed {{ background: {c['ACCENT_HI']}; }}
-QPushButton#primary:focus {{ background: {c['ACCENT_HI']}; border-color: {c['FOCUS']}; }}
-QPushButton#danger {{ background: {c['DANGER']}; color: {c['ON_ACCENT']}; font-weight: 700; }}
-QPushButton#danger:hover, QPushButton#danger:pressed {{ background: {c['DANGER_HI']}; }}
-QPushButton#danger:focus {{ background: {c['DANGER_HI']}; border-color: {c['FOCUS']}; }}
-QPushButton#key {{ padding: 2px; min-height: 52px; min-width: 52px; font-size: 22px; border-radius: 12px; }}
-QPushButton#pinKey {{ min-height: 72px; min-width: 96px; font-size: 32px; border-radius: 40px; }}
+QPushButton:hover {{ {box('button', c['SURFACE_HOVER'])} }}
+QPushButton:pressed, QPushButton:checked {{ {box('button', c['ACCENT'])} color: {c['ON_ACCENT']}; }}
+QPushButton:disabled {{ color: {c['TEXT_DIM']}; {box('button', c['SURFACE'])} }}
+QPushButton:focus {{ {box('button', c['SURFACE_HI'], c['ACCENT'], RING, glow=True)} }}
+QPushButton:checked:focus {{ {box('button', c['ACCENT'], c['FOCUS'], RING, glow=True)} }}
+QPushButton#primary {{ {box('button', c['ACCENT'])} color: {c['ON_ACCENT']}; font-weight: 700; }}
+QPushButton#primary:hover, QPushButton#primary:pressed {{ {box('button', c['ACCENT_HI'])} }}
+QPushButton#primary:focus {{ {box('button', c['ACCENT_HI'], c['FOCUS'], RING, glow=True)} }}
+QPushButton#danger {{ {box('button', c['DANGER'])} color: #ffffff; font-weight: 700; }}
+QPushButton#danger:hover, QPushButton#danger:pressed {{ {box('button', c['DANGER_HI'])} }}
+QPushButton#danger:focus {{ {box('button', c['DANGER_HI'], c['FOCUS'], RING, glow=True)} }}
+QPushButton#key {{ {box('key', c['SURFACE_HI'])} {pad('key', 5, 5)} min-height: 52px; min-width: 52px;
+                   font-size: 22px; font-weight: 500; }}
+QPushButton#key:hover {{ {box('key', c['SURFACE_HOVER'])} }}
+QPushButton#key:pressed, QPushButton#key:checked {{ {box('key', c['ACCENT'])} }}
+QPushButton#key:focus {{ {box('key', c['SURFACE_HI'], c['ACCENT'], RING)} }}
+QPushButton#key:checked:focus {{ {box('key', c['ACCENT'], c['FOCUS'], RING)} }}
+QPushButton#pinKey {{ {box('pin', c['SURFACE_HI'])} {pad('pin', 13, 25)} min-height: 72px; min-width: 96px;
+                      font-size: 32px; font-weight: 500; }}
+QPushButton#pinKey:hover {{ {box('pin', c['SURFACE_HOVER'])} }}
+QPushButton#pinKey:pressed {{ {box('pin', c['ACCENT'])} color: {c['ON_ACCENT']}; }}
+QPushButton#pinKey:focus {{ {box('pin', c['SURFACE_HI'], c['ACCENT'], RING, glow=True)} }}
 
-/* tabs: the open one underlined, the controller's one a soft box */
+/* tabs: the open one marked with a bar, the controller's one a box */
 QPushButton#tab {{
-    background: transparent;
-    border: none;
-    border-radius: 0;
-    border-bottom: 3px solid transparent;
-    padding: 16px 20px;
+    {box('tab', 'transparent')}
+    {pad('tab', 16, 20)}
+    padding-bottom: {19 - SLICE['tab']}px;
     font-size: 22px;
+    font-weight: 500;
     color: {c['TEXT_DIM']};
 }}
 QPushButton#tab:hover {{ color: {c['TEXT']}; }}
-QPushButton#tab:checked {{ color: {c['TEXT']}; font-weight: 600; border-bottom: 3px solid {c['ACCENT']}; }}
-QPushButton#tab:focus {{ background: {c['SURFACE_HI']}; color: {c['TEXT']}; border-radius: 12px;
-                         border-bottom: 3px solid transparent; }}
-QPushButton#tab:checked:focus {{ border-radius: 12px; border-bottom: 3px solid {c['ACCENT']}; }}
+QPushButton#tab:checked {{ color: {c['TEXT']}; font-weight: 700; {tab_marker(c['ACCENT'])} }}
+QPushButton#tab:focus {{ {box('tab', c['SURFACE_HI'])} color: {c['TEXT']};
+                         /* no bar: the highlight must not look like the open tab */ }}
+QPushButton#tab:checked:focus {{ {tab_marker(c['ACCENT'], c['SURFACE_HI'])} }}
 
 QLineEdit, QComboBox {{
-    background: {c['SURFACE']};
+    background: transparent;
     color: {c['TEXT']};
-    border: 2px solid {c['BORDER']};
-    border-radius: 14px;
-    padding: 10px 16px;
+    {box('field', c['SURFACE'], c['BORDER'], 2)}
+    {pad('field', 12, 18)}
     min-height: 42px;
     font-size: 21px;
     selection-background-color: {c['ACCENT']};
     selection-color: {c['ON_ACCENT']};
 }}
-QLineEdit:focus, QComboBox:focus {{ border-color: {c['ACCENT']}; }}
-QComboBox:hover {{ background: {c['SURFACE_HI']}; }}
+QLineEdit:focus, QComboBox:focus {{ {box('field', c['SURFACE'], c['ACCENT'], 2, glow=True)} }}
+QComboBox:hover {{ {box('field', c['SURFACE_HI'], c['BORDER'], 2)} }}
+QComboBox:hover:focus {{ {box('field', c['SURFACE_HI'], c['ACCENT'], 2, glow=True)} }}
 QComboBox::drop-down {{ border: none; width: 44px; background: transparent; }}
 QComboBox::down-arrow {{ image: url({chevron}); width: 22px; height: 22px; }}
 QComboBox QAbstractItemView {{
     background: {c['SURFACE']};
     color: {c['TEXT']};
     border: 2px solid {c['BORDER']};
-    border-radius: 12px;
+    border-top: 3px solid {c['ACCENT']};
+    border-radius: 0;
     padding: 6px;
     outline: none;
     selection-background-color: {c['ACCENT']};
     selection-color: {c['ON_ACCENT']};
     font-size: 21px;
 }}
-QComboBox QAbstractItemView::item {{ min-height: 52px; padding: 0 12px; border-radius: 10px; }}
+QComboBox QAbstractItemView::item {{ min-height: 52px; padding: 0 12px; border-radius: 0; }}
 
 QSlider {{ min-height: 48px; background: transparent; }}
-QSlider::groove:horizontal {{ height: 8px; background: {c['SURFACE_HI']}; border-radius: 4px; }}
-QSlider::sub-page:horizontal {{ background: {c['ACCENT']}; border-radius: 4px; }}
+QSlider::groove:horizontal {{ height: 6px; background: {c['SURFACE_HOVER']}; border-radius: 0; }}
+QSlider::sub-page:horizontal {{ background: {c['ACCENT']}; border-radius: 0; }}
 QSlider::handle:horizontal {{
-    background: {c['TEXT']}; width: 32px; height: 32px; margin: -12px 0; border-radius: 16px;
+    image: url({_handle(c['TEXT'])}); width: 30px; height: 30px; margin: -12px 0; background: transparent;
 }}
-QSlider:focus {{ background: {c['ACCENT_SOFT']}; border: 3px solid {c['ACCENT']}; border-radius: 14px; }}
-QSlider::handle:horizontal:focus {{ background: {c['ACCENT']}; border: 3px solid {c['FOCUS']}; }}
-QProgressBar {{ background: {c['SURFACE_HI']}; border: none; border-radius: 5px; max-height: 10px; }}
-QProgressBar::chunk {{ background: {c['ACCENT']}; border-radius: 5px; }}
+QSlider:focus {{ {box('field', c['ACCENT_SOFT'], c['ACCENT'], RING)} padding: {3 - SLICE['field']}px; }}
+QSlider::handle:horizontal:focus {{ image: url({_handle(c['ACCENT'], c['FOCUS'])}); }}
+QProgressBar {{ background: {c['SURFACE_HI']}; border: none; border-radius: 0; max-height: 10px; }}
+QProgressBar::chunk {{ background: {c['ACCENT']}; border-radius: 0; }}
 
 /* cards: games, libraries, settings sections - the focus ring is the card's edge */
-QFrame#card {{ background: {c['SURFACE']}; border-radius: 18px; border: 3px solid {c['CARD_EDGE']}; }}
-QFrame#card:hover {{ background: {c['SURFACE_HI']}; }}
-QFrame#card:focus {{ border: 3px solid {c['ACCENT']}; background: {c['SURFACE_HI']}; }}
+QFrame#card {{ background: transparent; {box('card', c['SURFACE'], c['CARD_EDGE'], 3)}
+               padding: {3 - SLICE['card']}px; }}
+QFrame#card:hover {{ {box('card', c['SURFACE_HI'], c['CARD_EDGE'], 3)} }}
+QFrame#card:focus {{ {box('card', c['SURFACE_HI'], c['ACCENT'], RING, glow=True)} }}
 
 QFrame#topBar {{ background: {c['SURFACE']}; border-bottom: 1px solid {c['BORDER']}; }}
 QWidget#menuRow {{ background: transparent; }}
 QLabel#hintBar {{ background: {c['SURFACE']}; color: {c['TEXT_DIM']}; font-size: 17px; padding: 8px 24px;
                   border-top: 1px solid {c['BORDER']}; }}
-QLabel#battery {{ font-size: 20px; padding: 0 14px; color: {c['TEXT_DIM']}; }}
+QLabel#battery {{ font-size: 20px; padding: 0 14px; color: {c['TEXT_DIM']}; {display}; font-weight: 500; }}
 QLabel#battery[charging="true"] {{ color: {c['SUCCESS']}; }}
 QLabel#battery[low="true"] {{ color: {c['DANGER']}; font-weight: 700; }}
 QLabel#healthOk {{ color: {c['SUCCESS']}; font-size: 24px; font-weight: 700; }}
@@ -200,11 +351,12 @@ QuickMenu, PowerMenu, BatteryWarning, DisplayConfirm, _Overlay {{ background: {c
 
 QScrollArea {{ border: none; background: transparent; }}
 QScrollArea > QWidget > QWidget {{ background: transparent; }}
-QScrollBar:vertical {{ width: 8px; background: transparent; margin: 4px 0; }}
-QScrollBar::handle:vertical {{ background: {c['BORDER']}; border-radius: 4px; min-height: 40px; }}
+QScrollBar:vertical {{ width: 6px; background: transparent; margin: 4px 0; }}
+QScrollBar::handle:vertical {{ background: {c['BORDER']}; border-radius: 0; min-height: 40px; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}
 QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
-QToolTip {{ background: {c['SURFACE_HI']}; color: {c['TEXT']}; border: 1px solid {c['BORDER']}; padding: 6px; }}
+QToolTip {{ background: {c['SURFACE_HI']}; color: {c['TEXT']}; border: 1px solid {c['BORDER']};
+            border-left: 3px solid {c['ACCENT']}; padding: 6px; }}
 """
 
 
@@ -239,6 +391,7 @@ def apply(name: str, app=None, size: str | None = None) -> str:
     globals().update(PALETTES[name])
     STYLESHEET = scaled(stylesheet(PALETTES[name]), TEXT_SIZES[text_size][1])
     if app is not None:
+        load_fonts()
         app.setStyleSheet(STYLESHEET)
     for listener in list(_listeners):
         try:

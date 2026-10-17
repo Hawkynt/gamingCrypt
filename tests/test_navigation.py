@@ -362,10 +362,11 @@ def test_tab_highlight_looks_different_from_the_open_tab():
     from gamingcrypt.ui import theme
 
     css = theme.STYLESHEET
-    focus_rule = next(line for line in css.splitlines() if line.startswith("QPushButton#tab:focus"))
-    focus_rule += next(line for line in css.splitlines()[css.splitlines().index(focus_rule) + 1:])
-    assert theme.ACCENT not in focus_rule and theme.ACCENT_HI not in focus_rule  # no blue underline
-    assert "border-bottom: 3px solid transparent" in focus_rule and theme.SURFACE_HI in focus_rule  # a box
+    focus_rule = css[css.index("QPushButton#tab:focus {"):]
+    focus_rule = focus_rule[:focus_rule.index("}")]
+    picture = open(focus_rule.split("url(")[1].split(")")[0]).read()
+    assert theme.ACCENT not in picture and theme.ACCENT_HI not in picture  # no blue bar
+    assert focus_rule.count("url(") == 1 and theme.box("tab", theme.SURFACE_HI) in focus_rule  # a box
 
 
 # --- rows with a caption: wide controls must not be skipped ------------------------------

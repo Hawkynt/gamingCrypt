@@ -14,6 +14,10 @@ touch and controller, and can boot the device straight into a SteamOS-like gamin
 |---|---|---|
 | ![movies](docs/screenshots/movies.png) | ![shows](docs/screenshots/shows.png) | ![lock](docs/screenshots/lock.png) |
 
+| Light theme | Game page | Quick menu |
+|---|---|---|
+| ![games-light](docs/screenshots/games-light.png) | ![detail-light](docs/screenshots/detail-light.png) | ![quickmenu-light](docs/screenshots/quickmenu-light.png) |
+
 <details>
 <summary>More screenshots</summary>
 
@@ -21,13 +25,17 @@ touch and controller, and can boot the device straight into a SteamOS-like gamin
 |---|---|---|
 | ![steam](docs/screenshots/steam.png) | ![movie](docs/screenshots/movie.png) | ![show](docs/screenshots/show.png) |
 
-| Episodes | Settings | Light theme |
+| Episodes | Settings | First start |
 |---|---|---|
-| ![episodes](docs/screenshots/episodes.png) | ![settings](docs/screenshots/settings.png) | ![light](docs/screenshots/games-light.png) |
+| ![episodes](docs/screenshots/episodes.png) | ![settings](docs/screenshots/settings.png) | ![create](docs/screenshots/create.png) |
 
-| 5×5 pattern | Swipe pattern | First start |
+| 5×5 pattern | Swipe pattern | PIN, light |
 |---|---|---|
-| ![grid5](docs/screenshots/grid5.png) | ![pattern](docs/screenshots/pattern.png) | ![create](docs/screenshots/create.png) |
+| ![grid5](docs/screenshots/grid5.png) | ![pattern](docs/screenshots/pattern.png) | ![pin-light](docs/screenshots/pin-light.png) |
+
+| Steam library, light | Settings, light | |
+|---|---|---|
+| ![steam-light](docs/screenshots/steam-light.png) | ![settings-light](docs/screenshots/settings-light.png) | |
 
 </details>
 
@@ -77,7 +85,8 @@ touch and controller, and can boot the device straight into a SteamOS-like gamin
 - 📺 **Refresh rate**: changed while you play - from the quick menu and from Settings (no
   restart) - on screens gamescope has other rates for (e.g. the Steam Deck); hidden on the others.
 - ⚙️ **Device settings**: resolution, refresh rate, brightness, power limit (TDP), audio devices.
-- 🌗 Dark and light theme.
+- 🌗 Dark and light theme, in a handheld look: corners cut at 45°, and the controller's highlight
+  lights up along the cuts.
 
 ## Requirements
 
@@ -140,3 +149,5 @@ Screenshots are made with `.venv/bin/python docs/screenshots.py` (sample data, n
 ## License
 
 [MIT](LICENSE)
+
+The bundled Chakra Petch font is under the [SIL Open Font License](gamingcrypt/ui/fonts/OFL.txt).

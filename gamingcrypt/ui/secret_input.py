@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import math
 
-from PySide6.QtCore import QPointF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QLineEdit, QSizePolicy, QVBoxLayout, QWidget
 
 from gamingcrypt.ui import theme
@@ -13,6 +13,11 @@ from gamingcrypt.ui.widgets import OnScreenKeyboard, big_button
 from gamingcrypt.unlock import secrets
 
 METHOD_LABELS = {"pin": "PIN", "password": "Password", "pattern": "Swipe pattern", "grid5": "5×5 Pattern"}
+
+
+def _dot(center: QPointF, r: float) -> QPainterPath:
+    """A pattern dot: a small square with two corners cut, like everything else (theme.py)."""
+    return theme.cut_path(QRectF(center.x() - r, center.y() - r, 2 * r, 2 * r), r * 0.7)
 
 
 class PinPad(QWidget):
@@ -36,7 +41,7 @@ class PinPad(QWidget):
             button = big_button(key, "pinKey")
             if key == "✓":
                 button.setObjectName("primary")
-                button.setStyleSheet("min-height: 72px; min-width: 96px; font-size: 32px; border-radius: 40px;")
+                button.setStyleSheet("min-height: 72px; min-width: 96px; font-size: 32px;")
             button.clicked.connect(lambda _=False, k=key: self.press(k))
             self.buttons[key] = button
             grid.addWidget(button, i // 3, i % 3)
@@ -173,7 +178,8 @@ class PatternWidget(QWidget):
         color = QColor(theme.DANGER if self._error else theme.ACCENT)
         cell = self._cell()
         if self.nodes:
-            painter.setPen(QPen(color, cell * 0.06, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            painter.setPen(QPen(color, cell * 0.06, Qt.PenStyle.SolidLine, Qt.PenCapStyle.SquareCap,
+                                Qt.PenJoinStyle.MiterJoin))
             points = [self.node_center(n) for n in self.nodes]
             if self._cursor is not None:
                 points.append(self._cursor)
@@ -184,11 +190,12 @@ class PatternWidget(QWidget):
             active = i in self.nodes
             painter.setBrush(color if active else QColor(theme.SURFACE_HI))
             r = cell * (0.16 if active else 0.11)
-            painter.drawEllipse(self.node_center(i), r, r)
+            painter.drawPath(_dot(self.node_center(i), r))
         if self.hasFocus():
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.setPen(QPen(QColor(theme.ACCENT_HI), cell * 0.03))
-            painter.drawEllipse(self.node_center(self.pad_cursor), cell * 0.24, cell * 0.24)
+            painter.setPen(QPen(QColor(theme.ACCENT_HI), cell * 0.03, Qt.PenStyle.SolidLine, Qt.PenCapStyle.SquareCap,
+                                Qt.PenJoinStyle.MiterJoin))
+            painter.drawPath(_dot(self.node_center(self.pad_cursor), cell * 0.24))
 
 
 class DotCanvas(QWidget):
@@ -263,11 +270,12 @@ class DotCanvas(QWidget):
             active = i == self.flash
             painter.setBrush(QColor(theme.ACCENT if active else theme.SURFACE_HI))
             r = cell * (0.3 if active else 0.22)
-            painter.drawEllipse(self.node_center(i), r, r)
+            painter.drawPath(_dot(self.node_center(i), r))
         if self.hasFocus():
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.setPen(QPen(QColor(theme.ACCENT_HI), cell * 0.04))
-            painter.drawEllipse(self.node_center(self.pad_cursor), cell * 0.38, cell * 0.38)
+            painter.setPen(QPen(QColor(theme.ACCENT_HI), cell * 0.04, Qt.PenStyle.SolidLine, Qt.PenCapStyle.SquareCap,
+                                Qt.PenJoinStyle.MiterJoin))
+            painter.drawPath(_dot(self.node_center(self.pad_cursor), cell * 0.38))
 
 
 SIDE_GAP = 56

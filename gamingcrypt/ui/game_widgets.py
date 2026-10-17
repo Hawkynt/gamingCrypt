@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from PySide6.QtCore import QPoint, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPixmap
+from PySide6.QtGui import QColor, QPainter, QPixmap
 from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QVBoxLayout, QWidget
 
 from gamingcrypt.steam.models import SteamGame
@@ -62,9 +62,9 @@ def meta_text(game: SteamGame, sort_key: str = "name") -> str:
 
 
 class Cover(QLabel):
-    """A picture (cover, poster, still) with rounded corners - everywhere the same."""
+    """A picture (cover, poster, still) with two corners cut off - everywhere the same (theme.py)."""
 
-    RADIUS = 12
+    CUT = theme.CUT["cover"]
 
     def paintEvent(self, event) -> None:  # noqa: N802 - Qt API
         pixmap = self.pixmap()
@@ -79,9 +79,7 @@ class Cover(QLabel):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        path = QPainterPath()
-        path.addRoundedRect(QRectF(x, y, w, h), self.RADIUS, self.RADIUS)
-        painter.setClipPath(path)
+        painter.setClipPath(theme.cut_path(QRectF(x, y, w, h), self.CUT))
         painter.drawPixmap(x, y, pixmap)
         painter.end()
 
@@ -105,10 +103,7 @@ def placeholder_cover(name: str, w: int = COVER_W, h: int = COVER_H) -> QPixmap:
     color = QColor(theme.TEXT)
     color.setAlpha(150)
     painter.setPen(color)
-    font = QFont()
-    font.setPixelSize(int(min(w, h) * 0.42))
-    font.setBold(True)
-    painter.setFont(font)
+    painter.setFont(theme.display_font(int(min(w, h) * 0.46)))
     painter.drawText(QRectF(0, 0, w, h), Qt.AlignmentFlag.AlignCenter, (name[:1] or "?").upper())
     painter.end()
     return pix
