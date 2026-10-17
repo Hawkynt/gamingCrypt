@@ -44,6 +44,9 @@ class VeraCryptUnlocker:
     sudo_helper: str = ""
     # scrypt parameters (see kdf.py); None = the secret is the password (legacy).
     kdf: dict | None = None
+    # users.py: the vault and the admin's key slot (once there are users) - checks the admin's
+    # code without the volume, when it's open already
+    keyring: dict | None = None
 
     @classmethod
     def from_config(cls, unlock_cfg: dict, runner: Runner = subprocess.run) -> "VeraCryptUnlocker":
@@ -57,6 +60,7 @@ class VeraCryptUnlocker:
             runner=runner,
             sudo_helper=unlock_cfg.get("sudo_helper", DEFAULT_HELPER),
             kdf=unlock_cfg.get("kdf") or None,
+            keyring=unlock_cfg.get("keyring") or None,
         )
 
     @property
@@ -190,10 +194,11 @@ class VeraCryptUnlocker:
     def dismount_command(self, force: bool = False) -> list[str]:
         return self._base() + (["--force"] if force else []) + ["-d", self.volume]
 
-    def dismount(self) -> UnlockResult:
-        """Unmount the drive (panic lock). Forced when something still holds files on it."""
+    def dismount(self, force: bool = True) -> UnlockResult:
+        """Unmount the drive (panic lock). Forced when something still holds files on it -
+        unless ``force`` is False."""
         last = UnlockResult(False, "")
-        for force in (False, True):
+        for force in (False, True) if force else (False,):
             try:
                 result = self.runner(self.dismount_command(force), capture_output=True, text=True, timeout=60,
                                      stdin=subprocess.DEVNULL)
@@ -252,7 +257,9 @@ class VeraCryptUnlocker:
         if not self.configured:
             return UnlockResult(False, "No VeraCrypt volume configured")
         if self.is_mounted():
-            return UnlockResult(True, "Volume already mounted")
+            checked = self._check_while_open(secret)
+            if checked is not None:
+                return checked
         if self.mount_point:
             try:
                 os.makedirs(os.path.expanduser(self.mount_point), exist_ok=True)
@@ -263,6 +270,23 @@ class VeraCryptUnlocker:
         except kdf_mod.KDFError as exc:
             return UnlockResult(False, str(exc))
         return self._run(self.mount_command(), password, "Unlocked")
+
+    def _check_while_open(self, secret: str) -> UnlockResult | None:
+        """The drive is open already (a lock that couldn't close it, GamingCrypt started again) -
+        the code still has to be the right one: checked with the admin's key slot where there is
+        one (the drive stays open), otherwise by VeraCrypt - the drive closed (never forced: a
+        game may still run from it) and opened with the code again. None: closed, open it."""
+        slot = (self.keyring or {}).get("admin") if isinstance(self.keyring, dict) else None
+        if slot:
+            from gamingcrypt.unlock import keyslots
+
+            if keyslots.open_slot(secret, slot) is not None:
+                return UnlockResult(True, "Volume already mounted")
+            return UnlockResult(False, "Wrong code - please try again")
+        if self.dismount(force=False).success:
+            return None
+        return UnlockResult(False, "The drive is still open and in use, so the code can't be checked - "
+                                   "close what uses it or restart the device")
 
 
 def explain_error(output: str) -> str:

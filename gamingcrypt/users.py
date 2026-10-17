@@ -404,7 +404,8 @@ class UserUnlocker:
 
     def __init__(self, config: dict, user: User, unlocker_factory):
         self.config, self.user = config, user
-        self.base = unlocker_factory(dict(config["unlock"], kdf=None))  # gets the volume's password itself
+        # gets the volume's password itself (not the admin's code: no key slot to check it with)
+        self.base = unlocker_factory(dict(config["unlock"], kdf=None, keyring=None))
 
     @property
     def configured(self) -> bool:
@@ -421,6 +422,8 @@ class UserUnlocker:
             return UnlockResult(False, str(exc))
         if password is None:
             return UnlockResult(False, "Wrong code")
+        if getattr(self.base, "is_mounted", lambda: False)():
+            return UnlockResult(True, "Volume already mounted")  # (the code opened its key slot: it's right)
         return self.base.unlock(password)
 
 
