@@ -51,6 +51,14 @@ class NavSource:
             self._thread.join(2)
         self._thread = None
 
+    def _physical(self) -> list[e.DeviceInfo]:
+        """Every controller connected (a Bluetooth one too), when the mapping is off."""
+        devices = getattr(self.input, "devices", None)
+        if callable(devices):
+            return [d for d in devices() if d.name != e.VIRTUAL_NAME]
+        one = self.input.device()
+        return [one] if one is not None else []
+
     def _run(self) -> None:
         while not self._stop.is_set():
             choice = self.choose()
@@ -58,34 +66,55 @@ class NavSource:
                 self._stop.wait(self.RECHECK_S)
                 continue
             info, virtual = choice
-            try:
-                device = self.open_device(info.path)
-            except OSError:
+            opened = []
+            for each in [info] if virtual else self._physical():
+                try:
+                    opened.append((each, self.open_device(each.path)))
+                except OSError:
+                    pass
+            if not opened:
                 self._stop.wait(self.RECHECK_S)
                 continue
             try:
-                self._read(device, info, virtual)
+                self._read(opened, virtual)
             finally:
-                device.close()
+                for _each, device in opened:
+                    device.close()
 
-    def _read(self, device, info: e.DeviceInfo, virtual: bool) -> None:
-        translator = None
+    def _read(self, opened: list, virtual: bool) -> None:
+        """Every opened controller, until the choice changes (mapping on / off, a controller
+        connected or gone)."""
+        import select
+
+        translators = {}
         if not virtual:
-            translator = Translator(self.input.profile(info), read_absinfo(device, info.axes))
+            for info, device in opened:
+                translators[device.fd] = Translator(self.input.profile(info), read_absinfo(device, info.axes))
+        devices = {device.fd: device for _info, device in opened}
+        paths = sorted(info.path for info, _device in opened)
         checked = time.monotonic()
         while not self._stop.is_set():
             try:
-                events = device.read(0.1)
-            except OSError:
-                return  # unplugged -> choose again
-            for event in events:
-                if translator is None:
-                    self.emit(*event)
-                else:
-                    for out in translator.feed(*event):
-                        self.emit(*out)
+                ready, _, _ = select.select(list(devices), [], [], 0.1)
+            except (OSError, ValueError):
+                return
+            for fd in ready:
+                try:
+                    events = devices[fd].read(0)
+                except OSError:
+                    return  # unplugged -> choose again
+                translator = translators.get(fd)
+                for event in events:
+                    if translator is None:
+                        self.emit(*event)
+                    else:
+                        for out in translator.feed(*event):
+                            self.emit(*out)
             if time.monotonic() - checked > self.RECHECK_S:
                 checked = time.monotonic()
                 choice = self.choose()
-                if choice is None or choice[0].path != info.path:
-                    return  # mapping switched on/off or controller changed
+                if choice is None or choice[1] != virtual:
+                    return  # mapping switched on / off
+                now = [choice[0].path] if virtual else sorted(d.path for d in self._physical())
+                if now != paths:
+                    return  # a controller connected or gone

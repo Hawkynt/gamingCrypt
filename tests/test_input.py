@@ -331,3 +331,139 @@ def test_x_and_y_reach_their_hooks():
         nav.on_event(e.EV_KEY, code, 0)
     assert calls == ["west (X)", "north (Y)"]
     window.close()
+
+
+# --- more than one controller (the built-in one and a Bluetooth one) ------------------------
+
+class PipePad:
+    """A controller whose events are handed in by the test - select() sees them (a pipe)."""
+
+    def __init__(self):
+        self.fd, self._wake = os.pipe()
+        self.events, self.grabbed, self.closed, self.gone = [], False, False, False
+
+    def press(self, *events):
+        self.events.extend(events)
+        os.write(self._wake, b"x")
+
+    def unplug(self):
+        self.gone = True
+        os.write(self._wake, b"x")
+
+    def absinfo(self, axis):
+        return ABSINFO.get(axis)
+
+    def grab(self):
+        self.grabbed = True
+
+    def read(self, timeout=0.1):
+        try:
+            os.read(self.fd, 64)
+        except BlockingIOError:
+            pass
+        if self.gone:
+            raise OSError(19, "No such device")
+        events, self.events = self.events, []
+        return events
+
+    def close(self):
+        self.closed = True
+
+
+class FakeVirtual:
+    def __init__(self):
+        self.got, self.closed = [], False
+
+    def emit(self, events):
+        self.got.extend(events)
+
+    def close(self):
+        self.closed = True
+
+
+BUILT_IN = e.DeviceInfo("/dev/input/event7", "Microsoft X-Box 360 pad", "045e", "028e", KEYS, AXES)
+DUALSENSE = e.DeviceInfo("/dev/input/event13", "DualSense Wireless Controller", "054c", "0ce6", KEYS, AXES)
+
+
+def wait_until(condition, timeout=3.0):
+    end = time.time() + timeout
+    while not condition() and time.time() < end:
+        time.sleep(0.02)
+    return condition()
+
+
+def test_every_controller_feeds_the_virtual_one(monkeypatch):
+    """Seen on the handheld: a DualSense over Bluetooth was a working input device - but only the
+    built-in pad was read, so it did nothing in the UI and wasn't player 1 in games. Now each
+    connected controller feeds the virtual pad (with its own profile); one connected later is
+    found, one that goes away is let go - and the virtual pad stays."""
+    from gamingcrypt.input import remapper as remapper_mod
+
+    monkeypatch.setattr(remapper_mod, "RESCAN_S", 0.05)
+    pads = {BUILT_IN.path: PipePad(), DUALSENSE.path: PipePad()}
+    connected = [BUILT_IN]
+    virtual = FakeVirtual()
+    profiles = []
+
+    def profile_for(info):
+        profiles.append(info.name)
+        return default_profile(info.keys, info.axes)
+
+    r = Remapper(BUILT_IN, default_profile(KEYS, AXES), open_device=lambda path: pads[path],
+                 make_uinput=lambda: virtual, find=lambda: list(connected), profile_for=profile_for)
+    assert r.start(), r.error
+    try:
+        pads[BUILT_IN.path].press((e.EV_KEY, e.BTN_SOUTH, 1), (e.EV_SYN, 0, 0))
+        assert wait_until(lambda: (e.EV_KEY, e.BTN_SOUTH, 1) in virtual.got)
+        connected.append(DUALSENSE)  # paired over Bluetooth meanwhile
+        assert wait_until(lambda: DUALSENSE in r.infos)
+        assert pads[DUALSENSE.path].grabbed and "DualSense Wireless Controller" in profiles  # its own profile
+        pads[DUALSENSE.path].press((e.EV_KEY, e.BTN_EAST, 1), (e.EV_SYN, 0, 0))
+        assert wait_until(lambda: (e.EV_KEY, e.BTN_EAST, 1) in virtual.got)
+        connected.remove(DUALSENSE)
+        pads[DUALSENSE.path].unplug()  # switched off
+        assert wait_until(lambda: DUALSENSE not in r.infos) and pads[DUALSENSE.path].closed
+        assert r.running and not virtual.closed and not r.error  # the built-in one goes on
+        pads[BUILT_IN.path].press((e.EV_KEY, e.BTN_NORTH, 1), (e.EV_SYN, 0, 0))
+        assert wait_until(lambda: (e.EV_KEY, e.BTN_NORTH, 1) in virtual.got)
+    finally:
+        r.stop()
+    assert virtual.closed and all(p.closed for p in pads.values())
+
+
+def test_wine_games_skip_every_grabbed_controller():
+    svc, *_ = service([BUILT_IN, DUALSENSE])
+    svc.set_enabled(True)
+    svc.remapper.infos = [BUILT_IN, DUALSENSE]
+    assert svc.game_env() == {"SDL_GAMECONTROLLER_IGNORE_DEVICES": "0x045e/0x028e,0x054c/0x0ce6"}
+
+
+def test_the_ui_reads_every_controller_without_the_mapping(monkeypatch):
+    """Mapping off: the UI reads the controllers themselves - all of them, not only the first."""
+    from gamingcrypt.input.nav_source import NavSource
+
+    pads = {BUILT_IN.path: PipePad(), DUALSENSE.path: PipePad()}
+
+    class Svc:
+        running = False
+
+        def devices(self):
+            return [BUILT_IN, DUALSENSE]
+
+        def device(self):
+            return BUILT_IN
+
+        def profile(self, info):
+            return default_profile(info.keys, info.axes)
+
+    got = []
+    src = NavSource(Svc(), lambda *ev: got.append(ev), devices=lambda: [BUILT_IN, DUALSENSE],
+                    open_device=lambda path: pads[path])
+    src.start()
+    try:
+        time.sleep(0.2)
+        pads[DUALSENSE.path].press((e.EV_KEY, e.BTN_SOUTH, 1), (e.EV_SYN, 0, 0))
+        pads[BUILT_IN.path].press((e.EV_KEY, e.BTN_EAST, 1), (e.EV_SYN, 0, 0))
+        assert wait_until(lambda: (e.EV_KEY, e.BTN_SOUTH, 1) in got and (e.EV_KEY, e.BTN_EAST, 1) in got)
+    finally:
+        src.stop()
