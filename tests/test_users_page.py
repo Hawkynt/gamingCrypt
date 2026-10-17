@@ -74,13 +74,16 @@ def test_adding_a_user(qtbot, tab):
 
 
 def test_the_admins_code_has_to_be_right(qtbot, tab):
+    """Wrong: only the admin's code is asked again - Mia's new code, chosen and repeated before
+    it, stays (it was all thrown away and asked from the start)."""
     flow = add(qtbot, tab, "Mia", "pin", "1111", admin_code="000000")
     qtbot.waitUntil(lambda: "not the admin's code" in flow.status.text(), timeout=10000)
-    assert tab.currentWidget() is flow and len(users.all_users(tab.config)) == 1 and flow.index == 0  # from the start
-    enter_new(flow, "pin", "1111")
+    assert tab.currentWidget() is flow and len(users.all_users(tab.config)) == 1
+    assert flow.index == 1 and "admin's code" in flow.prompt.text() and flow.answers["new"] == "1111"
     flow.input.secret_entered.emit(ADMIN_CODE)
     qtbot.waitUntil(lambda: tab.currentWidget() is tab.overview, timeout=10000)
-    assert len(users.all_users(tab.config)) == 2
+    mia = users.all_users(tab.config)[1]
+    assert users.volume_password(tab.config, mia.id, "1111")  # the code entered before the wrong one
 
 
 def test_a_new_code_has_to_be_repeated(qtbot, tab):
@@ -161,8 +164,8 @@ def test_a_user_sees_only_themselves_and_changes_their_own_code(qtbot):
     flow.input.secret_entered.emit("9999")  # not her current one
     enter_new(flow, "pin", "3333")
     qtbot.waitUntil(lambda: "not your current code" in flow.status.text(), timeout=10000)
+    assert flow.index == 0 and flow.answers["new"] == "3333"  # only the current one again
     flow.input.secret_entered.emit("1111")
-    enter_new(flow, "pin", "3333")
     qtbot.waitUntil(lambda: tab.currentWidget() is tab.overview, timeout=10000)
     assert users.volume_password(cfg, mia.id, "3333") and users.volume_password(cfg, mia.id, "1111") is None
 

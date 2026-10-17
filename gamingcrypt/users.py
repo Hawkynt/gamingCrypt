@@ -31,7 +31,12 @@ LOCKABLE = ("Movies", "Shows", "Music", "Pictures")  # tabs the admin can lock f
 
 
 class UserError(ValueError):
-    pass
+    """``step``: the code that was wrong ("admin", "old" - its key in users_page.CodeFlow): only
+    that one is asked again, the others entered before it stay."""
+
+    def __init__(self, message: str, step: str | None = None):
+        super().__init__(message)
+        self.step = step
 
 
 @dataclass(frozen=True)
@@ -142,11 +147,12 @@ def admin_master(config: dict, admin_secret: str, verify=None) -> bytes:
     if isinstance(keyring, dict) and keyring.get("admin"):
         master = keyslots.open_slot(admin_secret, keyring.get("admin"))
         if master is None:
-            raise UserError("That's not the admin's code")
+            raise UserError("That's not the admin's code", step="admin")
         return master
-    if verify is None or not verify(admin_secret):
-        raise UserError("That's not the admin's code" if verify is not None
-                        else "Lock the drive and unlock it once as admin, then try again")
+    if verify is None:
+        raise UserError("Lock the drive and unlock it once as admin, then try again")
+    if not verify(admin_secret):
+        raise UserError("That's not the admin's code", step="admin")
     try:
         password = kdf.derive_password(admin_secret, unlock.get("kdf"))
     except kdf.KDFError as exc:

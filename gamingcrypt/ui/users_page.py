@@ -122,6 +122,8 @@ class CodeFlow(QWidget):
 
     def show_step(self) -> None:
         self.pending = None
+        while self.index < len(self.steps) and self.steps[self.index][1] in self.answers:
+            self.index += 1  # entered already (a wrong code after it is asked again on its own)
         if self.index >= len(self.steps):
             self._finish()
             return
@@ -186,7 +188,13 @@ class CodeFlow(QWidget):
     def _failed(self, exc: Exception) -> None:
         self.busy = False
         self.cancel_button.setEnabled(True)
-        self.answers, self.index = {}, 0
+        keys = [step[1] for step in self.steps]
+        wrong = getattr(exc, "step", None) if isinstance(exc, users.UserError) else None
+        if wrong in keys:  # only that code again: the new one, chosen and repeated before, stays
+            self.answers.pop(wrong, None)
+            self.index = keys.index(wrong)
+        else:
+            self.answers, self.index = {}, 0
         self.show_step()
         set_status(self.status, str(exc) if isinstance(exc, users.UserError) else f"That didn't work: {exc}",
                    error=True)
@@ -406,7 +414,7 @@ class UsersSection(QFrame):
             def finish(answers: dict) -> str:
                 master = users.user_master(config, user.id, answers["old"])
                 if master is None:
-                    raise users.UserError("That's not your current code")
+                    raise users.UserError("That's not your current code", step="old")
                 users.set_code(config, user.id, answers["new_method"], answers["new"], master)
                 return "Your code is changed"
 
