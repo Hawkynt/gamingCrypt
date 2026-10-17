@@ -26,7 +26,8 @@ text_size = "normal"
 DISPLAY_FONT = "Chakra Petch"  # titles, tabs, buttons (bundled in fonts/, SIL Open Font License)
 # ... it has no symbols (⏻ ✓ ⌫ ⚙): those come from the next family that has them, not from
 # whatever the system falls back to (often a small monospace one)
-DISPLAY_FAMILIES = [DISPLAY_FONT, "Noto Sans Symbols 2", "Noto Sans Symbols", "Noto Sans", "DejaVu Sans"]
+# (a text face right after it: without the display face no symbol font sets the lines' height)
+DISPLAY_FAMILIES = [DISPLAY_FONT, "Noto Sans", "Noto Sans Symbols 2", "Noto Sans Symbols", "DejaVu Sans"]
 FONTS = Path(__file__).resolve().parent / "fonts"
 
 PALETTES = {
